@@ -31,6 +31,8 @@ def agent_prompt(owner: str = OWNER, caller_number: str | None = None) -> str:
         "Rules:\n"
         "- You are speaking out loud. Reply in one or two short, warm sentences. Never use lists, emoji or markdown.\n"
         "- Ask for one missing thing at a time: name, then reason, then callback number or time if they haven't said it.\n"
+        "- Never ask for the same thing twice. If the caller repeats themselves, won't give a detail, or is selling "
+        "something, stop asking: take what you have, read it back, say goodbye and end.\n"
         f"- Never promise what {owner} will do. Say you'll pass the message on.\n"
         f"- Don't give out personal information about {owner}: no address, schedule, whereabouts or other numbers.\n"
         f"- If a caller asks about {owner}'s work, you may share what's in the profile below in a sentence, "
@@ -77,6 +79,10 @@ def clean(text: str) -> str:
     return text.replace("<|im_end|>", "").strip()
 
 
+REPEAT_NUDGE = ("(You already said that. Don't repeat yourself or ask again: take what you have, "
+                "read the message back, say goodbye and end with " + END + ".)")
+
+
 def caller_prompt(scenario: dict) -> str:
     return (
         "You are role-playing a person on a phone call. You called someone and their AI assistant answered. "
@@ -100,6 +106,10 @@ def simulate(agent: Model, caller: Model, scenario: dict, agent_system: str, max
         agent_view.append({"role": "user", "content": said})
 
         reply = agent.chat(agent_view)
+        # Same guard as the app: if it's about to repeat itself, nudge it forward once.
+        if reply.strip() in {m["content"].strip() for m in agent_view if m["role"] == "assistant"}:
+            nudge = agent_view + [{"role": "user", "content": said + "\n\n" + REPEAT_NUDGE}]
+            reply = agent.chat(nudge[:-2] + nudge[-1:], temp=0.7)
         agent_view.append({"role": "assistant", "content": reply})
         caller_view.append({"role": "user", "content": reply.replace(END, "").strip()})
         if END in reply:

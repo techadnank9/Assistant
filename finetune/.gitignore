@@ -6,3 +6,9 @@ models/
 results/
 external/
 best/
+data4/
+dpo_data/
+dpo_out/
+dpo_base_data/
+dpo_base_out/
+results_*/

@@ -38,6 +38,10 @@ enum Prompts {
     /// Marker the model appends when the call should end. Stripped before speaking.
     static let endMarker = "[END]"
 
+    /// Sent with the caller's line when the model was about to repeat itself.
+    static let repeatNudge = "(You already said that. Don't repeat yourself or ask again: take what you have, read the message back, say goodbye and end with \(endMarker).)"
+    static let ownerRepeatNudge = "(You already said that. Say something new and helpful instead, in one or two sentences.)"
+
     static func ownerGreeting(owner: String) -> String {
         "Hi \(owner), what can I do for you?"
     }
@@ -66,6 +70,8 @@ enum Prompts {
             Rules:
             - You are speaking out loud. Reply in one or two short, warm sentences. Never use lists, emoji or markdown.
             - Ask for one missing thing at a time: name, then reason, then callback number or time if they haven't said it.
+            - Never ask for the same thing twice. If the caller repeats themselves, won't give a detail, or is selling \
+            something, stop asking: take what you have, read it back, say goodbye and end.
             - Never promise what \(owner) will do. Say you'll pass the message on.
             - Don't give out personal information about \(owner): no address, schedule, whereabouts or other numbers.
             - If a caller asks about \(owner)'s work, you may share what's in the profile below in a sentence, then take their message.

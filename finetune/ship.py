@@ -10,6 +10,12 @@ import os
 from pathlib import Path
 
 REPO = "adnank9/qwen3-1.7b-phone-assistant-4bit"
+RECIPES = {
+    "sft": "LoRA on teacher-generated calls from 140+ caller personas plus a slice of Google Taskmaster-1",
+    "dpo": "LoRA fine-tuning on teacher calls, then DPO against its own worst replies",
+    "dpo_base": "DPO (QLoRA) directly on the base model: teacher replies preferred over its own worst replies "
+                "on 140+ generated caller personas",
+}
 
 
 def beats(c: dict, base: dict) -> bool:
@@ -46,8 +52,7 @@ tags: [mlx, phone-assistant, on-device]
 # Qwen3-1.7B phone assistant (4-bit, MLX)
 
 The on-device model behind [Assistant](https://github.com/techadnank9/Assistant): answers calls and takes messages
-on an iPhone. Fine-tuned from Qwen3-1.7B ({label}): LoRA on teacher-generated calls from 100+ caller personas
-plus a slice of Google Taskmaster-1{", then DPO against its own worst replies" if label == "dpo" else ""}.
+on an iPhone. Trained from Qwen3-1.7B ({label}): {RECIPES.get(label, "LoRA fine-tuning")}.
 
 Held-out evaluation vs base: overall {summary[label]['overall /10']:.2f} vs {base['overall /10']:.2f} /10,
 {summary[label]['words/reply']:.1f} vs {base['words/reply']:.1f} words per reply,

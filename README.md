@@ -129,7 +129,13 @@ cd finetune && ./run_all.sh    # real data → practice calls → LoRA → fuse 
 | Round | Training data | Score vs base (/10) | Shipped |
 |---|---|---|---|
 | 2 | 317 practice calls + 320 Taskmaster | 9.06 vs **9.19** (wordier, ended 81% of calls) | no |
-| 3 | more practice calls, Taskmaster capped at 10% | in progress | — |
+| 4 | 144 generated caller personas, SFT then DPO (QLoRA) against the student's worst replies | SFT 9.00, SFT+DPO 9.34 vs **9.75** (both repeated themselves more) | no |
+
+What actually fixed the base model's weak spot (asking the same question when a caller repeats or refuses)
+was a prompt rule plus a repeat guard in the app: repeated replies dropped from 15.6% to **2.1%** and calls
+ended properly went from 91% to **97%** on 32 held-out callers. DPO did its job (it preferred the better reply
+82% of the time on unseen pairs), but the fine-tuning before it hurt more than DPO recovered; the next
+attempt is DPO directly on the base model.
 
 ## Project layout
 

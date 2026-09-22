@@ -43,6 +43,7 @@ final class VoiceAgent {
     private var conversation: UUID?
     private var hungUp = false
     private var listening: Task<String?, Never>?
+    private var instructions = ""
 
     /// Longest a call may run before the agent wraps up.
     private let maxDuration: TimeInterval = 240
@@ -115,13 +116,11 @@ final class VoiceAgent {
         Log.info(.voice, "Loading model")
         try await LLMEngine.shared.load(AppSettings.shared.model)
         let profile = AppSettings.shared.ownerProfile
+        instructions = mode == .owner
+            ? Prompts.voiceChat(owner: owner, profile: profile, briefing: MessageStore.shared.briefing())
+            : Prompts.call(owner: owner, callerNumber: callerNumber, profile: profile)
         conversation = try await LLMEngine.shared.open(
-            instructions: mode == .owner
-                ? Prompts.voiceChat(owner: owner, profile: profile, briefing: MessageStore.shared.briefing())
-                : Prompts.call(owner: owner, callerNumber: callerNumber, profile: profile),
-            history: [.assistant(greeting)],
-            maxTokens: 120
-        )
+            instructions: instructions, history: [.assistant(greeting)], maxTokens: 120)
     }
 
     private func converse() async throws {
@@ -169,8 +168,10 @@ final class VoiceAgent {
     }
 
     /// Streams Qwen's reply and speaks it sentence by sentence as it arrives.
-    private func think(and prompt: String) async throws -> String {
+    private func think(and prompt: String, allowRetry: Bool = true) async throws -> String {
         guard let conversation else { return "" }
+        let earlierOpenings = Set(turns.filter { $0.speaker == .agent }.map { Self.opening($0.text) })
+        var repeating = false
         phase = .thinking
         let thinkStart = Date.now
         var firstToken = true
@@ -191,9 +192,23 @@ final class VoiceAgent {
             // Speak each complete sentence as soon as it exists.
             while let end = Self.sentenceEnd(in: visible, from: spoken) {
                 let sentence = String(visible[visible.index(visible.startIndex, offsetBy: spoken)..<end])
+                // About to repeat an earlier reply? Stop before saying it and nudge the model forward.
+                if spoken == 0, allowRetry, sentence.split(separator: " ").count >= 4,
+                   earlierOpenings.contains(Self.opening(sentence)) {
+                    repeating = true
+                    break
+                }
                 spoken = visible.distance(from: visible.startIndex, to: end)
                 await queue(sentence)
             }
+            if repeating { break }
+        }
+        if repeating {
+            Log.info(.voice, "Caught a repeated reply; nudging the model forward")
+            turns.remove(at: index)
+            try await restartConversation()
+            let nudge = mode == .owner ? Prompts.ownerRepeatNudge : Prompts.repeatNudge
+            return try await think(and: prompt + "\n\n" + nudge, allowRetry: false)
         }
         let visible = turns[index].text
         Log.info(.voice, "Agent: \(visible)")
@@ -225,6 +240,24 @@ final class VoiceAgent {
         await listener.finish()
         io.stop()
         turns.removeAll { $0.text.isEmpty }
+    }
+
+    /// Rebuilds the model's conversation from the transcript, minus the caller's latest line
+    /// (which is sent again with the nudge). Used after abandoning a repeated reply.
+    private func restartConversation() async throws {
+        if let conversation { await LLMEngine.shared.close(conversation) }
+        var history: [Chat.Message] = []
+        for turn in turns.dropLast() {
+            history.append(turn.speaker == .agent ? .assistant(turn.text) : .user(turn.text))
+        }
+        conversation = try await LLMEngine.shared.open(instructions: instructions, history: history, maxTokens: 120)
+    }
+
+    /// First sentence, lowercased without punctuation, for spotting repeats.
+    private static func opening(_ text: String) -> String {
+        let first = text.split(whereSeparator: { ".!?".contains($0) }).first.map(String.init) ?? text
+        return first.lowercased().filter { $0.isLetter || $0.isNumber || $0 == " " }
+            .trimmingCharacters(in: .whitespaces)
     }
 
     /// End of the first full sentence at or after `offset`, if one has finished.

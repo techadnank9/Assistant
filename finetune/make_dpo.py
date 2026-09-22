@@ -10,7 +10,9 @@ import json
 import random
 from pathlib import Path
 
-from common import END, Model, reply_score
+import re
+
+from common import END, Model, agent_prompt, reply_score
 from import_taskmaster import SYSTEM as TASKMASTER_SYSTEM
 
 
@@ -26,6 +28,10 @@ def main():
     random.seed(11)
     rows = [json.loads(line) for line in open(Path(args.data) / "train.jsonl")]
     rows = [r for r in rows if r["messages"][0]["content"] != TASKMASTER_SYSTEM]
+    # Train against the current prompt (the rules evolve; the calls don't need to be regenerated).
+    for r in rows:
+        number = re.search(r"caller's number is (\+?\d+)", r["messages"][0]["content"])
+        r["messages"][0] = {"role": "system", "content": agent_prompt(caller_number=number.group(1) if number else None)}
     random.shuffle(rows)
 
     student = Model(args.student)

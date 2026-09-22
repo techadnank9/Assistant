@@ -1,43 +1,16 @@
 import SwiftUI
 
-/// Phase 2: talk to the agent through the phone's mic, exactly as a caller would.
+/// Home screen: the voice orb. Tap it to talk to the assistant exactly as a caller would.
 struct TalkView: View {
     @State private var agent: VoiceAgent?
     @State private var lastError: String?
 
     var body: some View {
-        NavigationStack {
-            start
-            .fullScreenCover(item: $agent) { LiveCallView(agent: $0, title: "Test call") }
-            .navigationTitle("Talk")
-            .navigationBarTitleDisplayMode(.inline)
-        }
-    }
-
-    private var start: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "waveform.circle.fill")
-                .font(.system(size: 64))
-                .foregroundStyle(.tint)
-            Text("Pretend you're calling")
-                .font(.title3.weight(.semibold))
-            Text("The agent greets you and takes a message, just like on a real call. It all runs on this iPhone. The message shows up under Messages.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 320)
-            if let lastError {
-                Text(lastError).font(.footnote).foregroundStyle(.red).multilineTextAlignment(.center)
-            }
-            Button("Start test call", systemImage: "phone.fill", action: begin)
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .padding(.top, 8)
-        }
-        .padding(24)
+        LiveCallView(agent: agent, title: "Assistant", error: lastError, onStart: begin)
     }
 
     private func begin() {
+        guard agent == nil else { return }
         #if targetEnvironment(simulator)
             let io: AudioIO = ScriptedCaller()
         #else
@@ -56,12 +29,16 @@ struct TalkView: View {
     }
 }
 
-/// The live call screen, for test calls and real ones: the voice orb, what's being said
-/// right now, and the transcript one tap away.
+/// The orb screen. With no agent it waits for a tap; with one it shows the live
+/// conversation: state, what's being said right now, transcript and end call.
 struct LiveCallView: View {
-    let agent: VoiceAgent
+    let agent: VoiceAgent?
     let title: String
+    var error: String?
+    var onStart: (() -> Void)?
     @State private var showTranscript = false
+
+    private var phase: VoiceAgent.Phase { agent?.phase ?? .idle }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -73,20 +50,26 @@ struct LiveCallView: View {
                     .font(.subheadline)
                     .foregroundStyle(.white.opacity(0.6))
                     .contentTransition(.opacity)
-                    .animation(.easeOut(duration: 0.2), value: agent.phase)
+                    .animation(.easeOut(duration: 0.2), value: phase)
             }
             .padding(.top, 24)
 
             Spacer(minLength: 24)
 
-            VoiceOrb(phase: agent.phase) { agent.audioLevel }
-                .frame(width: 240, height: 240)
+            Button { onStart?() } label: {
+                VoiceOrb(phase: phase) { agent?.audioLevel ?? 0 }
+                    .frame(width: 240, height: 240)
+                    .contentShape(.circle)
+            }
+            .buttonStyle(PressScaleStyle())
+            .disabled(agent != nil || onStart == nil)
+            .accessibilityHint(agent == nil ? "Starts a conversation with the assistant" : "")
 
             Spacer(minLength: 24)
 
             Text(currentLine)
                 .font(.title3.weight(.medium))
-                .foregroundStyle(.white.opacity(agent.phase == .listening ? 0.7 : 0.95))
+                .foregroundStyle(error != nil && agent == nil ? .red.opacity(0.9) : .white.opacity(phase == .listening || phase == .idle ? 0.7 : 0.95))
                 .multilineTextAlignment(.center)
                 .lineLimit(4)
                 .frame(maxWidth: .infinity, minHeight: 110, alignment: .top)
@@ -94,6 +77,25 @@ struct LiveCallView: View {
                 .contentTransition(.opacity)
                 .animation(.easeOut(duration: 0.2), value: currentLine)
 
+            controls
+                .frame(height: 72)
+                .padding(.bottom, 32)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(hex: 0x07080D).ignoresSafeArea())
+        .preferredColorScheme(.dark)
+        .sheet(isPresented: $showTranscript) {
+            NavigationStack {
+                List(agent?.turns ?? []) { TurnRow(turn: $0) }
+                    .navigationTitle("Transcript")
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+            .presentationDetents([.medium, .large])
+        }
+    }
+
+    @ViewBuilder private var controls: some View {
+        if let agent {
             HStack(spacing: 48) {
                 Button { showTranscript = true } label: {
                     Image(systemName: "text.bubble")
@@ -114,31 +116,27 @@ struct LiveCallView: View {
             }
             .foregroundStyle(.white)
             .buttonStyle(PressScaleStyle())
-            .padding(.bottom, 32)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(hex: 0x07080D).ignoresSafeArea())
-        .preferredColorScheme(.dark)
-        .sheet(isPresented: $showTranscript) {
-            NavigationStack {
-                List(agent.turns) { TurnRow(turn: $0) }
-                    .navigationTitle("Transcript")
-                    .navigationBarTitleDisplayMode(.inline)
-            }
-            .presentationDetents([.medium, .large])
+            .transition(.opacity)
+        } else {
+            Text("Everything runs on this iPhone")
+                .font(.footnote)
+                .foregroundStyle(.white.opacity(0.4))
+                .transition(.opacity)
         }
     }
 
-    /// What's being said right now: the caller's live caption while listening,
+    /// Idle: the prompt (or last error). Live: the caller's caption while listening,
     /// otherwise the agent's latest line.
     private var currentLine: String {
+        guard let agent else { return error ?? "Tap the orb to talk" }
         if agent.phase == .listening, !agent.caption.isEmpty { return agent.caption }
         if agent.phase == .starting { return "" }
         return agent.turns.last(where: { $0.speaker == .agent })?.text ?? ""
     }
 
     private var phaseLabel: String {
-        switch agent.phase {
+        switch phase {
+        case .idle: "Ready"
         case .starting: "Connecting…"
         case .listening: "Listening"
         case .thinking: "Thinking"

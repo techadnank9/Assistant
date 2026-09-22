@@ -14,7 +14,7 @@ struct Turn: Identifiable, Codable, Hashable {
 @MainActor
 @Observable
 final class VoiceAgent {
-    enum Phase: Equatable { case starting, listening, thinking, speaking, ended }
+    enum Phase: Equatable { case idle, starting, listening, thinking, speaking, ended }
 
     private(set) var phase: Phase = .starting
     private(set) var turns: [Turn] = []

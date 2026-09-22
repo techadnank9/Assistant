@@ -68,6 +68,7 @@ struct VoiceOrb: View {
 
     private var accessibilityText: String {
         switch phase {
+        case .idle: "Tap to talk"
         case .starting: "Getting ready"
         case .listening: "Listening"
         case .thinking: "Thinking"
@@ -97,6 +98,11 @@ struct VoiceOrb: View {
                         .init(hex: 0x1FD1C8), .init(hex: 0xE6FFFB), .init(hex: 0x2A9DFF),
                         .init(hex: 0x063A4A), .init(hex: 0x28C2E8), .init(hex: 0x042A38)]
                 glow = .init(hex: 0x28D8E8)
+            case .idle:
+                mesh = [.init(hex: 0x0D1230), .init(hex: 0x2B3A8F), .init(hex: 0x0D1230),
+                        .init(hex: 0x3D4FC9), .init(hex: 0x9FB2FF), .init(hex: 0x4A3FC0),
+                        .init(hex: 0x111845), .init(hex: 0x3647B0), .init(hex: 0x0C1029)]
+                glow = .init(hex: 0x5B6CFF)
             case .starting, .ended:
                 mesh = [.init(hex: 0x1C1F26), .init(hex: 0x3A3F4B), .init(hex: 0x1C1F26),
                         .init(hex: 0x454B59), .init(hex: 0x8A91A3), .init(hex: 0x3A3F4B),

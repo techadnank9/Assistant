@@ -41,8 +41,8 @@ struct RootView: View {
 
     var body: some View {
         TabView {
+            Tab("Assistant", systemImage: "waveform") { TalkView() }
             Tab("Messages", systemImage: "tray") { MessagesView() }
-            Tab("Talk", systemImage: "waveform") { TalkView() }
             Tab("Chat", systemImage: "bubble.left.and.text.bubble.right") {
                 ChatView().environment(chat)
             }

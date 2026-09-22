@@ -20,12 +20,13 @@ NUMBERS = [None, "+14155550123", "+16505550188", "+12125550147"]
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--calls-per-scenario", type=int, default=6)
+    parser.add_argument("--scenarios", type=int, default=len(TRAIN), help="use only the first N (for a trial run)")
     parser.add_argument("--out", default="data")
     args = parser.parse_args()
 
     teacher = Model(TEACHER_MODEL)
     examples = []
-    for i, scenario in enumerate(TRAIN):
+    for i, scenario in enumerate(TRAIN[: args.scenarios]):
         for n in range(args.calls_per_scenario):
             number = random.choice(NUMBERS)
             call = simulate(teacher, teacher, scenario, agent_prompt(caller_number=number) + TEACHER_STYLE)

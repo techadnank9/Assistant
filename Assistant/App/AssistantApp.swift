@@ -23,7 +23,6 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         // PushKit has to be ready at launch, including when iOS wakes us for a call.
         CallManager.shared.startListeningForCalls()
         UNUserNotificationCenter.current().delegate = self
-        Task { _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) }
         return true
     }
 
@@ -38,10 +37,36 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 struct RootView: View {
     @State private var chat = ChatModel()
     @State private var calls = CallManager.shared
+    @State private var setup = SetupModel()
+    @State private var setupDone = false
+    /// "Start talking" on the setup screen goes straight into a conversation.
+    @State private var talkNow = false
 
     var body: some View {
+        Group {
+            if !setup.checked {
+                // Brief launch check; matches the orb screen so there's no flash.
+                Color(hex: 0x07080D).ignoresSafeArea()
+            } else if setupDone || setup.isReady && !setupShownThisLaunch {
+                tabs
+            } else {
+                SetupView(setup: setup) {
+                    talkNow = true
+                    setupDone = true
+                    Task { await chat.loadModel() }
+                }
+                .onAppear { setupShownThisLaunch = true }
+            }
+        }
+        .task { await setup.check() }
+    }
+
+    /// Once the setup screen has appeared, keep it until the user taps Start talking.
+    @State private var setupShownThisLaunch = false
+
+    private var tabs: some View {
         TabView {
-            Tab("Assistant", systemImage: "waveform") { TalkView() }
+            Tab("Assistant", systemImage: "waveform") { TalkView(autoStart: talkNow) }
             Tab("Messages", systemImage: "tray") { MessagesView() }
             Tab("Chat", systemImage: "bubble.left.and.text.bubble.right") {
                 ChatView().environment(chat)

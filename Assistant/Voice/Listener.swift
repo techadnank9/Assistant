@@ -31,22 +31,7 @@ actor Listener {
     /// Sets up on-device recognition, downloading Apple's speech model the first time.
     /// `status` receives short progress lines for the screen.
     func prepare(status: @escaping @Sendable (String) -> Void = { _ in }) async throws {
-        // Apple requires reserving the language before its speech model can be checked or downloaded.
-        do {
-            try await AssetInventory.reserve(locale: locale)
-        } catch {
-            Log.error(.speech, "Couldn't reserve \(locale.identifier): \(error)")
-        }
-
-        var module = try await Self.makeModule(locale: locale)
-        do {
-            try await Self.install(module, status: status, timeout: .seconds(60))
-        } catch where module is SpeechTranscriber {
-            // The newest recognizer's model is large; don't keep the caller waiting on it.
-            Log.error(.speech, "SpeechTranscriber setup failed (\(error)); falling back to DictationTranscriber")
-            module = DictationTranscriber(locale: locale, preset: .progressiveLongDictation)
-            try await Self.install(module, status: status, timeout: .seconds(90))
-        }
+        let module = try await Self.setUp(locale: locale, status: status)
         self.module = module
 
         let analyzer = SpeechAnalyzer(modules: [module])
@@ -137,8 +122,40 @@ actor Listener {
         partial = ""
     }
 
+    /// Makes sure an on-device recognizer and its speech model are installed, returning the module
+    /// to use. Used by the setup screen (ahead of time) and by `prepare` (instant once installed).
+    static func setUp(
+        locale: Locale = Locale(identifier: "en-US"),
+        status: @escaping @Sendable (String) -> Void = { _ in },
+        timeout: Duration = .seconds(60)
+    ) async throws -> any SpeechModule {
+        // Apple requires reserving the language before its speech model can be checked or downloaded.
+        do {
+            try await AssetInventory.reserve(locale: locale)
+        } catch {
+            Log.error(.speech, "Couldn't reserve \(locale.identifier): \(error)")
+        }
+        let module = try await makeModule(locale: locale)
+        do {
+            try await install(module, status: status, timeout: timeout)
+            return module
+        } catch where module is SpeechTranscriber {
+            // The newest recognizer's model is large; don't keep the caller waiting on it.
+            Log.error(.speech, "SpeechTranscriber setup failed (\(error)); falling back to DictationTranscriber")
+            let fallback = DictationTranscriber(locale: locale, preset: .progressiveLongDictation)
+            try await install(fallback, status: status, timeout: timeout + .seconds(30))
+            return fallback
+        }
+    }
+
+    /// True when a recognizer's speech model is already on the phone (no download needed).
+    static func isInstalled(locale: Locale = Locale(identifier: "en-US")) async -> Bool {
+        guard let module = try? await makeModule(locale: locale) else { return false }
+        return await AssetInventory.status(forModules: [module]) == .installed
+    }
+
     /// Downloads a module's speech model if needed, reporting progress, within `timeout`.
-    private static func install(
+    fileprivate static func install(
         _ module: any SpeechModule, status: @escaping @Sendable (String) -> Void, timeout: Duration
     ) async throws {
         let state = await AssetInventory.status(forModules: [module])

@@ -92,6 +92,7 @@ enum VoiceError: LocalizedError {
     case speechUnavailable
     case speechDenied
     case noMicrophone
+    case speechSetupTimedOut
 
     var errorDescription: String? {
         switch self {
@@ -99,6 +100,7 @@ enum VoiceError: LocalizedError {
         case .speechUnavailable: "On-device speech recognition isn't available for this language."
         case .speechDenied: "Speech recognition access is off. Turn it on in Settings."
         case .noMicrophone: "No microphone is available right now."
+        case .speechSetupTimedOut: "Speech recognition is still downloading. Try again in a minute."
         }
     }
 }

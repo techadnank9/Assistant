@@ -2,11 +2,24 @@ import SwiftUI
 
 /// Home screen: the voice orb. Tap it to talk to the assistant exactly as a caller would.
 struct TalkView: View {
+    /// Start talking as soon as the screen appears (opened from Chat's voice button).
+    var autoStart = false
+    /// Shown as a close button when the screen is presented over something else.
+    var onClose: (() -> Void)?
     @State private var agent: VoiceAgent?
     @State private var lastError: String?
 
     var body: some View {
-        LiveCallView(agent: agent, title: "Assistant", error: lastError, onStart: begin)
+        LiveCallView(agent: agent, title: "Assistant", error: lastError, onStart: begin, onClose: close)
+            .task { if autoStart { begin() } }
+    }
+
+    private var close: (() -> Void)? {
+        guard let onClose else { return nil }
+        return {
+            agent?.hangUp()
+            onClose()
+        }
     }
 
     private func begin() {
@@ -36,6 +49,7 @@ struct LiveCallView: View {
     let title: String
     var error: String?
     var onStart: (() -> Void)?
+    var onClose: (() -> Void)?
     @State private var showTranscript = false
 
     private var phase: VoiceAgent.Phase { agent?.phase ?? .idle }
@@ -53,6 +67,21 @@ struct LiveCallView: View {
                     .animation(.easeOut(duration: 0.2), value: phase)
             }
             .padding(.top, 24)
+            .frame(maxWidth: .infinity)
+            .overlay(alignment: .topLeading) {
+                if let onClose {
+                    Button(action: onClose) {
+                        Image(systemName: "xmark")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .background(.white.opacity(0.12), in: .circle)
+                    }
+                    .accessibilityLabel("Close")
+                    .padding(.leading, 16)
+                    .padding(.top, 12)
+                }
+            }
 
             Spacer(minLength: 24)
 
@@ -83,7 +112,9 @@ struct LiveCallView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(hex: 0x07080D).ignoresSafeArea())
-        .preferredColorScheme(.dark)
+        // Dark only on this screen; preferredColorScheme would flip the whole app.
+        .environment(\.colorScheme, .dark)
+        .toolbarColorScheme(.dark, for: .tabBar)
         .sheet(isPresented: $showTranscript) {
             NavigationStack {
                 List(agent?.turns ?? []) { TurnRow(turn: $0) }
@@ -128,9 +159,10 @@ struct LiveCallView: View {
     /// Idle: the prompt (or last error). Live: the caller's caption while listening,
     /// otherwise the agent's latest line.
     private var currentLine: String {
-        guard let agent else { return error ?? "Tap the orb to talk" }
+        let model = ModelStatus.shared.message
+        guard let agent else { return error ?? model ?? "Tap the orb to talk" }
         if agent.phase == .listening, !agent.caption.isEmpty { return agent.caption }
-        if agent.phase == .starting { return "" }
+        if agent.phase == .starting { return agent.status ?? model ?? "Getting ready…" }
         return agent.turns.last(where: { $0.speaker == .agent })?.text ?? ""
     }
 

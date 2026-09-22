@@ -17,10 +17,15 @@ struct ModelOption: Identifiable, Hashable, Sendable {
 }
 
 enum Prompts {
-    static let chat = """
-        You are a friendly phone assistant who answers calls when the owner can't. \
-        Keep replies short and spoken-sounding: one or two sentences, no lists, no markdown.
+    static func chat(owner: String, profile: String) -> String {
         """
+        You are \(owner)'s personal AI assistant, running privately on \(owner)'s iPhone. \
+        When someone asks who you are, say you're \(owner)'s assistant. You answer calls when \(owner) \
+        can't pick up, take messages, and can tell people about \(owner)'s work. \
+        Never share personal details about \(owner) such as address, schedule or whereabouts. \
+        Keep replies short and friendly: one to three sentences, no lists, no markdown.
+        """ + (profile.isEmpty ? "" : "\n\nAbout \(owner) (professional, OK to share):\n\(profile)")
+    }
 
     /// Marker the model appends when the call should end. Stripped before speaking.
     static let endMarker = "[END]"

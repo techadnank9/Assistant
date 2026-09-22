@@ -19,6 +19,8 @@ final class VoiceAgent {
     private(set) var phase: Phase = .starting
     private(set) var turns: [Turn] = []
     private(set) var caption = ""
+    /// What's happening during setup ("Setting up speech recognition… 40%"), shown under the orb.
+    private(set) var status: String?
     private(set) var error: String?
     let startedAt = Date.now
 
@@ -70,12 +72,11 @@ final class VoiceAgent {
 
     private func start() async throws {
         phase = .starting
-        Log.info(.voice, "Loading model")
-        try await LLMEngine.shared.load(AppSettings.shared.model)
-        Log.info(.voice, "Preparing speech recognition")
-        try await listener.prepare()
+        // Microphone first: the permission prompt appears the moment you tap.
+        status = "Starting the microphone…"
         Log.info(.voice, "Starting audio")
         try await io.start()
+        status = nil
 
         // Only feed the recognizer while listening, so the agent never transcribes itself.
         let listener = listener
@@ -89,14 +90,26 @@ final class VoiceAgent {
             }
         }
 
+        // Talk straight away: the greeting needs neither the recognizer nor the model, so the
+        // orb answers even while first-time downloads are still running.
         let greeting = Prompts.greeting(owner: owner)
+        try await say(greeting)
+
+        phase = .starting
+        Log.info(.voice, "Preparing speech recognition")
+        try await listener.prepare { line in
+            Task { @MainActor [weak self] in self?.status = line }
+        }
+        // On first use this downloads the model; the orb screen shows the progress meanwhile.
+        status = nil
+        Log.info(.voice, "Loading model")
+        try await LLMEngine.shared.load(AppSettings.shared.model)
         conversation = try await LLMEngine.shared.open(
             instructions: Prompts.call(
                 owner: owner, callerNumber: callerNumber, profile: AppSettings.shared.ownerProfile),
             history: [.assistant(greeting)],
             maxTokens: 120
         )
-        try await say(greeting)
     }
 
     private func converse() async throws {

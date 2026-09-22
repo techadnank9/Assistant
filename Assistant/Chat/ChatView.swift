@@ -1,9 +1,11 @@
 import SwiftUI
+import UIKit
 
 struct ChatView: View {
     @Environment(ChatModel.self) private var chat
     @State private var draft = ""
     @FocusState private var inputFocused: Bool
+    @State private var talking = false
 
     var body: some View {
         NavigationStack {
@@ -82,7 +84,7 @@ struct ChatView: View {
                     .buttonStyle(.bordered)
             default:
                 Text("Running on this iPhone").font(.headline)
-                Text("Chat with the model the phone agent uses.")
+                Text("Ask \(AppSettings.shared.ownerName)'s assistant anything, or tap the waveform to talk.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -105,16 +107,29 @@ struct ChatView: View {
                 Button("Stop", systemImage: "stop.circle.fill", action: chat.stop)
                     .labelStyle(.iconOnly)
                     .font(.system(size: 32))
+            } else if draft.trimmingCharacters(in: .whitespaces).isEmpty {
+                // Nothing typed: one tap to talk instead.
+                Button { talking = true } label: {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 32, height: 32)
+                        .background(.tint, in: .circle)
+                }
+                .accessibilityLabel("Talk to the assistant")
             } else {
                 Button("Send", systemImage: "arrow.up.circle.fill", action: send)
                     .labelStyle(.iconOnly)
                     .font(.system(size: 32))
-                    .disabled(!chat.canSend || draft.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(!chat.canSend)
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(.bar)
+        .fullScreenCover(isPresented: $talking) {
+            TalkView(autoStart: true) { talking = false }
+        }
     }
 
     private func send() {
@@ -135,7 +150,12 @@ private struct MessageBubble: View {
                 if message.text.isEmpty && isStreaming {
                     ProgressView().padding(.vertical, 2)
                 } else {
-                    Text(message.text).textSelection(.enabled)
+                    Text(message.text)
+                        .contextMenu {
+                            Button("Copy", systemImage: "doc.on.doc") {
+                                UIPasteboard.general.string = message.text
+                            }
+                        }
                 }
             }
             .padding(.horizontal, 14)

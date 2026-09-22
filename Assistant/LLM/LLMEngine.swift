@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import HuggingFace
 import MLX
 import MLXHuggingFace
@@ -14,6 +15,8 @@ actor LLMEngine {
 
     private var container: ModelContainer?
     private var loadedModel: String?
+    /// The load in flight, so a second caller waits for it instead of loading the model twice.
+    private var loading: (id: String, task: Task<Void, Error>)?
     private var conversations: [UUID: ChatSession] = [:]
 
     var isLoaded: Bool { container != nil }
@@ -26,12 +29,26 @@ actor LLMEngine {
     #endif
 
     /// Downloads the weights on first use (cached afterwards) and loads them into memory.
+    /// Concurrent callers share one load; progress is published on `ModelStatus.shared`.
     func load(_ option: ModelOption, progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws {
         guard loadedModel != option.id else { return }
+        if let loading, loading.id == option.id {
+            Log.info(.model, "Waiting for the load already in progress")
+            return try await loading.task.value
+        }
+        let task = Task { try await self.performLoad(option, progress: progress) }
+        loading = (option.id, task)
+        defer { loading = nil }
+        try await task.value
+    }
+
+    private func performLoad(_ option: ModelOption, progress: @escaping @Sendable (Double) -> Void) async throws {
+        await ModelStatus.shared.set(.downloading(0))
         #if targetEnvironment(simulator)
             Log.info(.model, "Simulator: using scripted replies instead of \(option.id)")
             loadedModel = option.id
             progress(1)
+            await ModelStatus.shared.set(.ready)
             return
         #endif
         conversations.removeAll()
@@ -46,6 +63,10 @@ actor LLMEngine {
                     configuration: option.configuration,
                     progressHandler: { p in
                         progress(p.fractionCompleted)
+                        let fraction = p.fractionCompleted
+                        Task { @MainActor in
+                            ModelStatus.shared.state = fraction < 1 ? .downloading(fraction) : .loading
+                        }
                         let tenth = Int(p.fractionCompleted * 10)
                         if lastLogged.swap(tenth) != tenth {
                             Log.info(.model, "Download \(tenth * 10)%")
@@ -55,9 +76,11 @@ actor LLMEngine {
             }
         } catch {
             Log.error(.model, "Load failed: \(error)")
+            await ModelStatus.shared.set(.failed(error.localizedDescription))
             throw error
         }
         loadedModel = option.id
+        await ModelStatus.shared.set(.ready)
         Log.info(.model, "Loaded in \(Int(Date.now.timeIntervalSince(start)))s")
     }
 
@@ -95,6 +118,19 @@ actor LLMEngine {
         // Generation runs in a child task, which inherits this task-local device.
         return Device.withDefaultDevice(device) { session.streamResponse(to: prompt) }
     }
+
+    /// Frees the model's memory, e.g. before deleting its files.
+    func unload() async {
+        loading?.task.cancel()
+        loading = nil
+        conversations.removeAll()
+        container = nil
+        loadedModel = nil
+        await ModelStatus.shared.set(.notStarted)
+        Log.info(.model, "Unloaded the model")
+    }
+
+    var currentModelID: String? { loadedModel }
 
     func close(_ id: UUID) {
         #if targetEnvironment(simulator)
@@ -151,6 +187,32 @@ actor LLMEngine {
     enum EngineError: LocalizedError {
         case notLoaded
         var errorDescription: String? { "The model isn't loaded yet." }
+    }
+}
+
+/// What the model is doing, for the UI: downloading (with progress), loading, ready or failed.
+@MainActor
+@Observable
+final class ModelStatus {
+    static let shared = ModelStatus()
+
+    enum State: Equatable {
+        case notStarted, downloading(Double), loading, ready, failed(String)
+    }
+
+    var state: State = .notStarted
+
+    func set(_ state: State) { self.state = state }
+
+    /// Short line for the orb screen, or nil once the model is ready.
+    var message: String? {
+        switch state {
+        case .notStarted, .ready: nil
+        case .downloading(let f) where f > 0: "Downloading the assistant… \(Int(f * 100))%"
+        case .downloading: "Downloading the assistant…"
+        case .loading: "Loading the assistant…"
+        case .failed(let e): "Couldn't load the model: \(e)"
+        }
     }
 }
 

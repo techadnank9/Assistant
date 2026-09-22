@@ -34,7 +34,7 @@ final class ChatModel {
             try await LLMEngine.shared.load(AppSettings.shared.model) { fraction in
                 Task { @MainActor in self.status = .loading(fraction) }
             }
-            conversation = try await LLMEngine.shared.open(instructions: Prompts.chat, maxTokens: 512)
+            conversation = try await LLMEngine.shared.open(instructions: Prompts.chat(owner: AppSettings.shared.ownerName, profile: AppSettings.shared.ownerProfile), maxTokens: 512)
             status = .ready
         } catch {
             Log.error(.model, "Chat couldn't start: \(error)")
@@ -88,7 +88,7 @@ final class ChatModel {
         tokensPerSecond = nil
         Task {
             if let conversation { await LLMEngine.shared.close(conversation) }
-            conversation = try? await LLMEngine.shared.open(instructions: Prompts.chat, maxTokens: 512)
+            conversation = try? await LLMEngine.shared.open(instructions: Prompts.chat(owner: AppSettings.shared.ownerName, profile: AppSettings.shared.ownerProfile), maxTokens: 512)
         }
     }
 }

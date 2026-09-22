@@ -28,25 +28,27 @@ actor Listener {
         self.locale = locale
     }
 
-    func prepare() async throws {
-        let module = try await Self.makeModule(locale: locale)
-        self.module = module
-
+    /// Sets up on-device recognition, downloading Apple's speech model the first time.
+    /// `status` receives short progress lines for the screen.
+    func prepare(status: @escaping @Sendable (String) -> Void = { _ in }) async throws {
         // Apple requires reserving the language before its speech model can be checked or downloaded.
         do {
             try await AssetInventory.reserve(locale: locale)
         } catch {
             Log.error(.speech, "Couldn't reserve \(locale.identifier): \(error)")
         }
-        let status = await AssetInventory.status(forModules: [module])
-        Log.info(.speech, "Speech model status: \(status)")
-        if status == .unsupported { throw VoiceError.speechUnavailable }
-        if status != .installed,
-           let request = try await AssetInventory.assetInstallationRequest(supporting: [module]) {
-            Log.info(.speech, "Downloading the speech model")
-            try await request.downloadAndInstall()
-            Log.info(.speech, "Speech model installed")
+
+        var module = try await Self.makeModule(locale: locale)
+        do {
+            try await Self.install(module, status: status, timeout: .seconds(60))
+        } catch where module is SpeechTranscriber {
+            // The newest recognizer's model is large; don't keep the caller waiting on it.
+            Log.error(.speech, "SpeechTranscriber setup failed (\(error)); falling back to DictationTranscriber")
+            module = DictationTranscriber(locale: locale, preset: .progressiveLongDictation)
+            try await Self.install(module, status: status, timeout: .seconds(90))
         }
+        self.module = module
+
         let analyzer = SpeechAnalyzer(modules: [module])
         self.analyzer = analyzer
         analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [module])
@@ -133,6 +135,40 @@ actor Listener {
         finalized = ""
         volatile = ""
         partial = ""
+    }
+
+    /// Downloads a module's speech model if needed, reporting progress, within `timeout`.
+    private static func install(
+        _ module: any SpeechModule, status: @escaping @Sendable (String) -> Void, timeout: Duration
+    ) async throws {
+        let state = await AssetInventory.status(forModules: [module])
+        Log.info(.speech, "Speech model status: \(state)")
+        if state == .unsupported { throw VoiceError.speechUnavailable }
+        guard state != .installed,
+              let request = try await AssetInventory.assetInstallationRequest(supporting: [module])
+        else { return }
+
+        Log.info(.speech, "Downloading the speech model")
+        status("Setting up speech recognition…")
+        let reporter = Task {
+            while !Task.isCancelled {
+                let percent = Int(request.progress.fractionCompleted * 100)
+                if percent > 0 { status("Setting up speech recognition… \(percent)%") }
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+        }
+        defer { reporter.cancel() }
+
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { try await request.downloadAndInstall() }
+            group.addTask {
+                try await Task.sleep(for: timeout)
+                throw VoiceError.speechSetupTimedOut
+            }
+            try await group.next()
+            group.cancelAll()
+        }
+        Log.info(.speech, "Speech model installed")
     }
 
     /// SpeechTranscriber (newer iPhones) is the most accurate; DictationTranscriber covers the rest.

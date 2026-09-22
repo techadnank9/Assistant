@@ -9,7 +9,7 @@ enum ModelChoice {
     )
 
     static let systemPrompt = """
-        You are Pickup, a friendly phone assistant who answers calls when the owner can't. \
+        You are a friendly phone assistant who answers calls when the owner can't. \
         Keep replies short and spoken-sounding: one or two sentences, no lists, no markdown.
         """
 }

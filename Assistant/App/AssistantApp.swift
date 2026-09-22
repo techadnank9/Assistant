@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct PickupApp: App {
+struct AssistantApp: App {
     @State private var chat = ChatModel()
 
     var body: some Scene {

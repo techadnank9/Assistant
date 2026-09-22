@@ -1,4 +1,4 @@
-# Pickup
+# Assistant
 
 A phone agent that runs on the iPhone itself: Qwen3 on device (MLX), answering calls to a Twilio number.
 
@@ -12,9 +12,9 @@ A phone agent that runs on the iPhone itself: Qwen3 on device (MLX), answering c
 ## Run
 ```
 xcodegen generate
-open Pickup.xcodeproj
+open Assistant.xcodeproj
 ```
 Choose your team under Signing & Capabilities, then run on a **real iPhone**. MLX needs the device GPU, so the simulator won't work.
 The first launch downloads about 1 GB of weights from Hugging Face; later launches load them from the cache.
 
-To change the model, edit `Pickup/LLM/ModelChoice.swift`.
+To change the model, edit `Assistant/LLM/ModelChoice.swift`.

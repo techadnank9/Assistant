@@ -26,7 +26,7 @@ struct ChatView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) { inputBar }
-            .navigationTitle("Pickup")
+            .navigationTitle("Assistant")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { statusLabel }

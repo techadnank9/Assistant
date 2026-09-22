@@ -5,3 +5,4 @@ DerivedData/
 xcuserdata/
 
 __pycache__/
+*.profraw

@@ -4,7 +4,7 @@
 <dict>
   <key>method</key><string>app-store-connect</string>
   <key>destination</key><string>upload</string>
-  <key>teamID</key><string>GTN3G5W9K2</string>
+  <key>teamID</key><string>S2UTA2J3GD</string>
   <key>signingStyle</key><string>automatic</string>
   <key>manageAppVersionAndBuildNumber</key><true/>
   <key>testFlightInternalTestingOnly</key><true/>

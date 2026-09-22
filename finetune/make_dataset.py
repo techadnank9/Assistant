@@ -22,6 +22,8 @@ def main():
     parser.add_argument("--calls-per-scenario", type=int, default=6)
     parser.add_argument("--scenarios", type=int, default=len(TRAIN), help="use only the first N (for a trial run)")
     parser.add_argument("--out", default="data")
+    parser.add_argument("--append", action="store_true", help="keep earlier generated calls (data/generated.jsonl)")
+    parser.add_argument("--real-share", type=float, default=0.1, help="fraction of training rows from Taskmaster")
     args = parser.parse_args()
 
     teacher = Model(TEACHER_MODEL)
@@ -40,11 +42,24 @@ def main():
                     examples.append({"messages": call[:cut]})
             print(f"[{i + 1}/{len(TRAIN)}] call {n + 1}: {len(call) - 2} turns")
 
+    cache = Path(args.out) / "generated.jsonl"
+    if args.append and cache.exists():
+        earlier = [json.loads(line) for line in open(cache)]
+        print(f"Keeping {len(earlier)} earlier generated examples")
+        examples = earlier + examples
+    Path(args.out).mkdir(exist_ok=True)
+    with open(cache, "w") as f:
+        for row in examples:
+            f.write(json.dumps(row) + "\n")
+
     random.shuffle(examples)
     split = max(1, len(examples) // 10)
     # Real human phone-assistant turns go into training only; validation stays on our own task.
     real = Path(__file__).with_name("external") / "taskmaster.jsonl"
     extra = [json.loads(line) for line in open(real)] if real.exists() else []
+    # Keep real data a small slice: it teaches spoken brevity but not our task or the [END] signal.
+    keep = int((len(examples) - split) * args.real_share / (1 - args.real_share))
+    extra = random.sample(extra, min(keep, len(extra)))
     out = Path(args.out)
     out.mkdir(exist_ok=True)
     train = examples[split:] + extra

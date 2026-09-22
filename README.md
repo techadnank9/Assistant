@@ -40,11 +40,14 @@ puts them together into an agent that picks up for you:
 | | |
 |---|---|
 | 🎙️ **Voice orb** | Tap the orb and talk. It breathes with your voice, swirls while thinking, and glows when it speaks. |
+| 🙋 **Your own assistant** | **My assistant** mode: talk to it like a voice chat. It knows who you are, the date, and every message it took ("who called today?"). **Test a call** mode practises the receptionist flow. |
+| ✅ **Guided setup** | First launch walks you through the mic permission, speech model and assistant model downloads (with progress), then straight into talking. |
 | ☎️ **Answers real calls** | Your Twilio number rings the iPhone through CallKit. Tap Answer and the agent takes the call. |
 | ⚡ **Streams its replies** | Speaks sentence by sentence as the model writes, so it doesn't wait for the whole answer. |
 | 📬 **Messages** | Every call is saved with a transcript and an AI summary. Urgent calls are flagged, and callback is one tap. |
 | 💬 **Chat** | Type to the same on-device model. |
 | 🪵 **Logs** | Every step (model load, speech, each turn, time to first reply) is viewable and shareable in Settings. |
+| ⚙️ **Model & voice settings** | Download, re-download or delete the model, see what's on the phone, and pick or preview the voice. |
 | 🧪 **Fine-tuning** | Train your own version on a Mac with MLX-LM and swap it in. |
 
 ## How it works
@@ -81,7 +84,8 @@ open Assistant.xcodeproj
 
 1. Pick your team under **Signing & Capabilities**. The app asks for more memory, which needs a paid developer account.
 2. Run it on your iPhone. The first launch downloads the model once (about 1 GB on Wi-Fi).
-3. Tap the orb and pretend you're calling. The message shows up under **Messages**.
+3. The setup screen asks for the microphone and downloads what's needed. Tap **Start talking**.
+4. Switch to **Test a call** and pretend you're calling. The message shows up under **Messages**.
 
 > **Simulator:** the whole app runs in the simulator, with a scripted model and a scripted caller standing in, because MLX and
 > Apple's speech models can't run there. It's handy for UI work. The real model needs a device.

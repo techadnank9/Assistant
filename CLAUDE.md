@@ -30,7 +30,12 @@ README.md covers what it is and how to run it. This file is how to work on it.
   speaker), `CallAudioDevice` (Twilio call), `ScriptedCaller` (simulator).
 - `Listener` must `AssetInventory.reserve(locale:)` before checking or downloading speech assets. It falls back from
   SpeechTranscriber to DictationTranscriber.
-- `Voice/VoiceOrb` + `LiveCallView` (in TalkView.swift) is the home screen and the call screen.
+- `Voice/VoiceOrb` + `LiveCallView` (in TalkView.swift) is the home screen and the call screen. `VoiceAgent.Mode`:
+  `.owner` (My assistant: `Prompts.voiceChat`, no time limit, nothing saved) or `.caller` (message taking).
+- `Setup/SetupModel` gates the app: mic permission, speech assets (`Listener.setUp`), model download. The orb
+  only appears once they're ready; `RootView` checks on every launch.
+- `MessageStore.briefing()` (date + latest messages) is appended to the Chat and My assistant prompts.
+- `ModelOption.tunedShipped` switches new installs to the fine-tuned model on Hugging Face.
 - `Calls/CallManager` handles PushKit → CallKit → Twilio. `CallAudioDevice` bridges call audio through AVAudioEngine
   source nodes.
 - `Messages/MessageStore` saves each call (SwiftData), summarizes it with Qwen and posts a notification.
@@ -46,9 +51,12 @@ README.md covers what it is and how to run it. This file is how to work on it.
   is Google Taskmaster-1 (CC BY 4.0), in `external/` and gitignored.
 - `train.sh` keeps the checkpoint with the lowest validation loss. `evaluate.py` compares base against tuned with Qwen3-8B
   as judge.
-- Round 2 lost to the base model (9.06 vs 9.19, wordier, ended only 81% of calls), so it was not shipped. Round 3
-  caps real data at 10% (`--real-share 0.1`). Ship a tuned model only if it beats the base. Then upload it to
-  `adnank9/qwen3-1.7b-phone-assistant-4bit` and make it the default in `ModelOption`.
+- Round 2 lost to the base model (9.06 vs 9.19, wordier, ended only 81% of calls), so it was not shipped.
+- Round 4 (`run_round4a.sh` then `run_round4b.sh`): `personas.py` invents ~150 callers, the teacher generates calls,
+  SFT, then DPO (`make_dpo.py` + `dpo_train.py`, mlx-lm-lora with a multi-turn dataset patch) against the
+  student's worst replies by `reply_score`, then `evaluate.py` (base vs sft vs dpo on held-out personas) and
+  `ship.py`, which uploads to `adnank9/qwen3-1.7b-phone-assistant-4bit` only if it beats base. Then flip
+  `ModelOption.tunedShipped`.
 - Set `HF_HUB_DISABLE_XET=1`: the Xet CDN drops downloads on this network. Tailscale DNS (100.100.100.100) blips
   occasionally.
 

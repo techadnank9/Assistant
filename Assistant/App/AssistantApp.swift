@@ -20,10 +20,20 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         Log.info(.app, "Launched")
+        // Pick up model downloads that continued (or finished) while the app was closed.
+        BackgroundDownloads.shared.reconnect()
         // PushKit has to be ready at launch, including when iOS wakes us for a call.
         CallManager.shared.startListeningForCalls()
         UNUserNotificationCenter.current().delegate = self
         return true
+    }
+
+    /// iOS relaunches the app to hand over downloads that finished while it was closed.
+    func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
+                     completionHandler: @escaping () -> Void) {
+        guard identifier == BackgroundDownloads.sessionID else { return completionHandler() }
+        BackgroundDownloads.shared.backgroundCompletion = completionHandler
+        BackgroundDownloads.shared.reconnect()
     }
 
     /// Show message notifications even while the app is open.
@@ -47,7 +57,7 @@ struct RootView: View {
             if !setup.checked {
                 // Brief launch check; matches the orb screen so there's no flash.
                 Color(hex: 0x07080D).ignoresSafeArea()
-            } else if setupDone || setup.isReady && !needsProfilePrompt && !setupShownThisLaunch {
+            } else if setupDone || setup.isReady && !setupShownThisLaunch {
                 tabs
             } else {
                 SetupView(setup: setup) {
@@ -60,11 +70,6 @@ struct RootView: View {
             }
         }
         .task { await setup.check() }
-    }
-
-    /// No profile yet: show the setup screen once so "About you" isn't missed.
-    private var needsProfilePrompt: Bool {
-        AppSettings.shared.ownerProfile.isEmpty && !AppSettings.shared.profilePromptSeen
     }
 
     /// Once the setup screen has appeared, keep it until the user taps Start talking.

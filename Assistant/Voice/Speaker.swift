@@ -25,14 +25,14 @@ final class Speaker {
     /// True when the downloaded neural voice should be used instead of Apple's.
     static var usesNaturalVoice: Bool {
         NaturalVoice.isSupported && AppSettings.shared.naturalVoice
-            && ModelFiles.bytes(for: NaturalVoice.repo) > 0
+            && NaturalVoice.isDownloaded
     }
 
     /// Speaks `text` through the loudspeaker. Utterances queue up and play in order.
     func speak(_ text: String) {
         if Self.usesNaturalVoice {
             Log.info(.audio, "Speaking (natural): \(text)")
-            naturalQueue.append(contentsOf: Self.sentences(text))
+            naturalQueue.append(contentsOf: Self.chunks(text))
             if !naturalBusy {
                 naturalBusy = true
                 naturalTask = Task { await runNatural() }
@@ -129,7 +129,20 @@ final class Speaker {
         }
     }
 
-    /// Splits text into sentences so the first can play while the rest render.
+    /// Whole sentences grouped into takes of up to ~300 characters: one natural take for a normal
+    /// reply, split only when a reply is long enough that rendering it in one go would delay it.
+    private static func chunks(_ text: String) -> [String] {
+        var takes: [String] = []
+        for sentence in sentences(text) {
+            if let last = takes.last, last.count + sentence.count < 300 {
+                takes[takes.count - 1] = last + " " + sentence
+            } else {
+                takes.append(sentence)
+            }
+        }
+        return takes
+    }
+
     private static func sentences(_ text: String) -> [String] {
         var result: [String] = []
         var current = ""

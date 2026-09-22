@@ -34,7 +34,9 @@ final class AppSettings {
     private init() {
         let d = UserDefaults.standard
         ownerName = d.string(forKey: "ownerName") ?? "Adnan"
-        ownerProfile = d.string(forKey: "ownerProfile") ?? Self.bundledProfile
+        // The built-in profile, unless the owner has written their own.
+        let stored = d.string(forKey: "ownerProfile") ?? ""
+        ownerProfile = stored.isEmpty ? Self.bundledProfile : stored
         twilioBaseURL = d.string(forKey: "twilioBaseURL") ?? ""
         twilioSecret = d.string(forKey: "twilioSecret") ?? ""
         listenIn = d.object(forKey: "listenIn") as? Bool ?? true

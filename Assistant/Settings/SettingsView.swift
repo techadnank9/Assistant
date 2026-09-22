@@ -213,39 +213,94 @@ private struct ModelSection: View {
 private struct VoiceSection: View {
     @Bindable var settings: AppSettings
     @State private var previewer = Speaker()
-    @State private var downloaded = ModelFiles.bytes(for: NaturalVoice.repo) > 0
+    @State private var downloaded = NaturalVoice.isDownloaded
     @State private var downloading = false
     @State private var failure: String?
+    @State private var samplePlayer: AVAudioPlayer?
+    @State private var playing: String?
     private let appleVoices = Speaker.availableVoices()
+
+    private func playSample(_ id: String) {
+        if playing == id {
+            samplePlayer?.stop()
+            playing = nil
+            return
+        }
+        guard let url = Bundle.main.url(forResource: id, withExtension: "m4a") else { return }
+        // Playback mode, so the silent switch doesn't mute the sample.
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
+        try? AVAudioSession.sharedInstance().setActive(true)
+        samplePlayer = try? AVAudioPlayer(contentsOf: url)
+        samplePlayer?.play()
+        playing = id
+        let length = samplePlayer?.duration ?? 0
+        Task {
+            try? await Task.sleep(for: .seconds(length + 0.2))
+            if playing == id { playing = nil }
+        }
+    }
+
+    private func download() {
+        downloading = true
+        failure = nil
+        Task {
+            do {
+                try await NaturalVoice.shared.load()
+            } catch {
+                failure = error.localizedDescription
+            }
+            downloading = false
+            downloaded = NaturalVoice.isDownloaded
+        }
+    }
 
     var body: some View {
         Section {
             if NaturalVoice.isSupported {
                 Toggle("Natural voice", isOn: $settings.naturalVoice)
-                if settings.naturalVoice {
-                    Picker("Voice", selection: $settings.kokoroVoice) {
-                        ForEach(NaturalVoice.voices) { Text($0.label).tag($0.id) }
-                    }
-                    if !downloaded {
-                        Button(downloading ? "Downloading natural voice…" : "Download natural voice (about 330 MB)",
-                               systemImage: "arrow.down.circle") {
-                            downloading = true
-                            failure = nil
-                            Task {
-                                do {
-                                    try await NaturalVoice.shared.load()
-                                } catch {
-                                    failure = error.localizedDescription
+            }
+            if settings.naturalVoice || !NaturalVoice.isSupported {
+                // Every voice has a bundled sample, so you can hear them before downloading anything.
+                ForEach(NaturalVoice.voices) { voice in
+                    HStack {
+                        Button {
+                            settings.kokoroVoice = voice.id
+                        } label: {
+                            HStack {
+                                Text(voice.label).foregroundStyle(.primary)
+                                Spacer()
+                                if settings.kokoroVoice == voice.id {
+                                    Image(systemName: "checkmark").foregroundStyle(.tint)
                                 }
-                                downloading = false
-                                downloaded = ModelFiles.bytes(for: NaturalVoice.repo) > 0
                             }
+                            .contentShape(.rect)
                         }
-                        .disabled(downloading)
+                        // Two buttons in one row: each needs its own tap area.
+                        .buttonStyle(.borderless)
+                        .tint(.primary)
+                        Button {
+                            playSample(voice.id)
+                        } label: {
+                            Image(systemName: playing == voice.id ? "stop.circle.fill" : "play.circle.fill")
+                                .font(.title2)
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("Play \(voice.label)")
                     }
-                    if let failure {
-                        Text(failure).font(.footnote).foregroundStyle(.red)
+                }
+            }
+            if NaturalVoice.isSupported && settings.naturalVoice {
+                LabeledContent("Download") {
+                    if downloaded {
+                        Label("On this iPhone", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    } else if downloading {
+                        ProgressView()
+                    } else {
+                        Button("All 7 voices · about 330 MB") { download() }
                     }
+                }
+                if let failure {
+                    Text(failure).font(.footnote).foregroundStyle(.red)
                 }
             }
             if !NaturalVoice.isSupported || !settings.naturalVoice {
@@ -256,12 +311,14 @@ private struct VoiceSection: View {
                     }
                 }
             }
+            if !NaturalVoice.isSupported || !settings.naturalVoice {
             Button("Preview", systemImage: "play.circle") {
                 // Playback mode, so the silent switch doesn't mute the preview.
                 try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
                 try? AVAudioSession.sharedInstance().setActive(true)
                 previewer.stopSpeaking()
                 previewer.speak("Hi, you've reached \(settings.ownerName)'s phone. Can I take a message?")
+            }
             }
         } header: {
             Text("Voice")

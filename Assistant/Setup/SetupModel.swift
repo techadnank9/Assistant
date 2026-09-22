@@ -33,11 +33,11 @@ final class SetupModel {
         microphone = Self.microphoneStep()
         speech = await Listener.isInstalled() ? .done : .waiting
         let option = AppSettings.shared.model
-        model = ModelFiles.bytes(for: option.id) > 0 || ModelStatus.shared.state == .ready ? .done : .waiting
+        model = ModelFiles.localDirectory(for: option.id) != nil || ModelStatus.shared.state == .ready ? .done : .waiting
         #if targetEnvironment(simulator)
             model = .done
         #endif
-        voice = ModelFiles.bytes(for: NaturalVoice.repo) > 0 ? .done : .waiting
+        voice = NaturalVoice.isDownloaded ? .done : .waiting
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         notifications = switch settings.authorizationStatus {
         case .authorized, .provisional, .ephemeral: .done
@@ -106,11 +106,11 @@ final class SetupModel {
     }
 
     private func downloadModel() async {
-        model = .working("About 1 GB, once. Wi-Fi recommended.", 0)
+        model = .working("About 1 GB, once. Keeps downloading if you leave the app.", 0)
         let watcher = Task { @MainActor in
             while !Task.isCancelled {
                 switch ModelStatus.shared.state {
-                case .downloading(let f): model = .working("About 1 GB, once. Wi-Fi recommended.", f)
+                case .downloading(let f): model = .working("About 1 GB, once. Keeps downloading if you leave the app.", f)
                 case .loading: model = .working("Getting it ready…", nil)
                 default: break
                 }
@@ -127,9 +127,13 @@ final class SetupModel {
     }
 
     private func downloadVoice() async {
-        voice = .working("About 330 MB, once.", nil)
+        voice = .working("All 7 voices, about 330 MB. Keeps downloading if you leave the app.", 0)
         do {
-            try await NaturalVoice.shared.load()
+            try await NaturalVoice.shared.load { fraction in
+                Task { @MainActor [weak self] in
+                    self?.voice = .working("All 7 voices, about 330 MB. Keeps downloading if you leave the app.", fraction)
+                }
+            }
             voice = .done
         } catch {
             voice = .failed(error.localizedDescription)

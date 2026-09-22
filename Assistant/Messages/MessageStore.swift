@@ -23,16 +23,21 @@ final class MessageStore {
         var descriptor = FetchDescriptor<CallRecord>(sortBy: [SortDescriptor(\.date, order: .reverse)])
         descriptor.fetchLimit = limit
         let records = (try? container.mainContext.fetch(descriptor)) ?? []
-        guard !records.isEmpty else { return "It is \(now). No calls or messages yet." }
+        let owner = AppSettings.shared.ownerName
+        guard !records.isEmpty else {
+            return "## Calls and messages you took\nNone yet.\n\nIt is \(now)."
+        }
         let lines = records.map { r in
             let when = r.date.formatted(.relative(presentation: .named))
             let who = r.callerName ?? r.callerNumber ?? "Unknown caller"
             let callback = r.callback.map { ", callback \($0)" } ?? ""
             let urgent = r.isUrgent ? " (urgent)" : ""
             let test = r.isTest ? " [test call]" : ""
-            return "- \(when): \(who)\(urgent)\(test): \(r.summary ?? "no summary")\(callback)"
+            return "- \(when): \(who)\(urgent)\(test) called. \(r.summary ?? "No summary.")\(callback)"
         }
-        return "It is \(now). Messages you took, newest first:\n" + lines.joined(separator: "\n")
+        return "## Calls and messages you took (newest first)\n" + lines.joined(separator: "\n")
+            + "\n\nIt is \(now). When \(owner) asks about calls or messages, say exactly what's in this list: "
+            + "who called, what they want and how to reach them."
     }
 
     func save(transcript: [Turn], callerNumber: String?, startedAt: Date, isTest: Bool) async {

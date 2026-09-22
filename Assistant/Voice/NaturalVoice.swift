@@ -38,17 +38,28 @@ actor NaturalVoice {
 
     var isLoaded: Bool { model != nil }
 
+    /// Downloaded and ready to load (no network needed).
+    static var isDownloaded: Bool { ModelFiles.localDirectory(for: repo) != nil }
+
     /// Downloads (first time) and loads the voice model. Concurrent callers share one load.
     @discardableResult
-    func load() async throws -> KokoroModel {
+    func load(progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> KokoroModel {
         if let model { return model }
         if let loading { return try await loading.value }
         let task = Task { () throws -> KokoroModel in
             let start = Date.now
             Log.info(.audio, "Loading natural voice (Kokoro)")
+            // All voices come in one download that continues in the background if the app closes.
+            let directory: URL
+            if let local = ModelFiles.localDirectory(for: Self.repo) {
+                directory = local
+            } else {
+                directory = try await BackgroundDownloads.shared.ensure(
+                    repo: Self.repo, include: { ModelFiles.isModelFile($0) }, progress: progress)
+            }
             let processor = MisakiTextProcessor()
-            try await processor.prepare()
-            let model = try await KokoroModel.fromPretrained(Self.repo, textProcessor: processor)
+            try await processor.prepare()   // pronunciation data, ~9 MB
+            let model = try await KokoroModel.fromModelDirectory(directory, textProcessor: processor)
             Log.info(.audio, "Natural voice ready in \(Int(Date.now.timeIntervalSince(start)))s")
             return model
         }

@@ -1,0 +1,11 @@
+Mohammed Adnan, who goes by Adnan, is a full-stack and AI engineer based in San Francisco with seven years of experience shipping production systems in logistics, payments and healthcare. Adnan's own description: a backend engineer who owns the whole path from the database to the deploy.
+
+Since May 2025 Adnan has worked independently on AI infrastructure and applied LLMs: an LLM pipeline engine with a C++ execution core and a Python API, multi-agent systems on CrewAI with RAG and tool calling, and voice agents, including a production voice ordering agent that runs live for a restaurant (Twilio phone calls with Deepgram speech, and a Next.js dashboard). Adnan also trains humanoid robot locomotion (a Unitree G1 humanoid called Sophia, with PPO in MuJoCo and Isaac Lab) and competes in AI and robotics hackathons such as Physical AI Hack, Greptile at YC and MongoDB Build Lab.
+
+Other projects: this phone assistant app (an AI that answers Adnan's calls, running fully on the iPhone), Crucible (a ten-agent adversarial review system), Owle (a revenue agent for skilled nursing facilities), Robot Gym (a competition arena for humanoid robots) and Launchpad (a go-to-market engine).
+
+Past roles: Team Lead at Centific (2024 to 2025), Senior Software Engineer at Guidesly (2023 to 2024), Full Stack Developer at Neudesic, an IBM company (2022 to 2023), and Software Engineer at Yoofoo Technologies (2019 to 2022). Highlights include cutting ML data-retrieval latency by 40 percent and deployment time by 30 percent. Education: B.Tech in Computer Science and Engineering from TKR College of Engineering and Technology.
+
+Skills: Python, C++, TypeScript, Go, Node.js, gRPC, Kafka, Kubernetes, AWS, GCP, Azure, PostgreSQL, MongoDB, CrewAI, PyTorch and voice AI.
+
+Public profiles: github.com/techadnank9, linkedin.com/in/techadnank9 and the site techadnank99.web.app.

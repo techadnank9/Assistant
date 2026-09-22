@@ -80,12 +80,12 @@ actor Listener {
     }
 
     /// Waits for the caller to finish a sentence. Returns nil if nobody speaks within `timeout`.
-    func nextUtterance(timeout: Duration = .seconds(12), pause: TimeInterval = 1.0) async -> String? {
+    func nextUtterance(timeout: Duration = .seconds(12)) async -> String? {
         let deadline = ContinuousClock.now + timeout
         while !Task.isCancelled {
             try? await Task.sleep(for: .milliseconds(100))
             let text = currentText
-            if !text.isEmpty, Date.now.timeIntervalSince(lastChange) >= pause {
+            if !text.isEmpty, Date.now.timeIntervalSince(lastChange) >= Self.pause(after: text) {
                 consume()
                 return text
             }
@@ -104,6 +104,23 @@ actor Listener {
     func inject(_ text: String) {
         handle(text, true, .positiveInfinity)
     }
+
+    /// How long a silence means "done talking". A finished sentence gets a short, natural gap;
+    /// a thought that trails off ("so…", "and um…") gets time to continue, like a person would.
+    static func pause(after text: String) -> TimeInterval {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lastWord = trimmed.lowercased()
+            .split(whereSeparator: { $0 == " " }).last.map { String($0).trimmingCharacters(in: .punctuationCharacters) } ?? ""
+        if continuationWords.contains(lastWord) { return 2.8 }
+        if let last = trimmed.last, ".?!".contains(last) { return 1.3 }
+        return 1.8   // no punctuation yet: probably mid-thought
+    }
+
+    private static let continuationWords: Set<String> = [
+        "and", "but", "or", "so", "because", "cause", "um", "uh", "uhm", "er", "like", "the", "a", "an", "to",
+        "of", "with", "for", "my", "your", "is", "was", "i", "i'm", "we", "if", "that", "then", "also", "about",
+        "at", "in", "on", "just", "actually", "well", "which", "who", "when", "where",
+    ]
 
     func finish() async {
         input?.finish()

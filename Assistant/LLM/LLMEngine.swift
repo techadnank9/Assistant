@@ -58,21 +58,24 @@ actor LLMEngine {
         Log.info(.model, "Loading \(option.id) on \(device)")
         let lastLogged = LockedValue(-1)
         do {
+            // Download in the background (keeps going if the app is closed), then load from disk.
+            let directory: URL
+            if let local = ModelFiles.localDirectory(for: option.id) {
+                directory = local
+            } else {
+                directory = try await BackgroundDownloads.shared.ensure(
+                    repo: option.id, include: { ModelFiles.isModelFile($0) },
+                    progress: { fraction in
+                        progress(fraction)
+                        Task { @MainActor in ModelStatus.shared.state = .downloading(fraction) }
+                        let tenth = Int(fraction * 10)
+                        if lastLogged.swap(tenth) != tenth { Log.info(.model, "Download \(tenth * 10)%") }
+                    })
+            }
+            await ModelStatus.shared.set(.loading)
+            let configuration = ModelConfiguration(directory: directory, extraEOSTokens: ["<|im_end|>"])
             container = try await Device.withDefaultDevice(device) {
-                try await #huggingFaceLoadModelContainer(
-                    configuration: option.configuration,
-                    progressHandler: { p in
-                        progress(p.fractionCompleted)
-                        let fraction = p.fractionCompleted
-                        Task { @MainActor in
-                            ModelStatus.shared.state = fraction < 1 ? .downloading(fraction) : .loading
-                        }
-                        let tenth = Int(p.fractionCompleted * 10)
-                        if lastLogged.swap(tenth) != tenth {
-                            Log.info(.model, "Download \(tenth * 10)%")
-                        }
-                    }
-                )
+                try await #huggingFaceLoadModelContainer(configuration: configuration)
             }
         } catch {
             Log.error(.model, "Load failed: \(error)")

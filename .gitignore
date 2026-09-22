@@ -4,7 +4,4 @@ DerivedData/
 .DS_Store
 xcuserdata/
 
-# Personal details about the owner stay out of the public repo
-finetune/owner_profile.txt
-Assistant/Resources/OwnerProfile.txt
 __pycache__/

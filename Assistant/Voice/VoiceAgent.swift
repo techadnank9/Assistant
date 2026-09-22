@@ -121,7 +121,7 @@ final class VoiceAgent {
             ? Prompts.voiceChat(owner: owner, profile: profile, briefing: MessageStore.shared.briefing())
             : Prompts.call(owner: owner, callerNumber: callerNumber, profile: profile)
         conversation = try await LLMEngine.shared.open(
-            instructions: instructions, history: [.assistant(greeting)], maxTokens: 120)
+            instructions: instructions, history: [.assistant(greeting)], maxTokens: mode == .owner ? 220 : 160)
     }
 
     private func converse() async throws {
@@ -173,9 +173,10 @@ final class VoiceAgent {
         guard let conversation else { return "" }
         let earlierOpenings = Set(turns.filter { $0.speaker == .agent }.map { Self.opening($0.text) })
         var repeating = false
-        // The neural voice also runs on MLX: let the reply finish before rendering speech, so the
-        // two models never share the GPU at once. Apple's voice can start mid-reply.
-        let speakWhileThinking = !(io.usesSystemSpeech && Speaker.usesNaturalVoice)
+        // On the phone's speaker, say the whole reply as one continuous take: sentence-by-sentence
+        // clips sound choppy, and the neural voice shouldn't share the GPU with the model anyway.
+        // Calls still stream sentence by sentence into the call audio.
+        let speakWhileThinking = !io.usesSystemSpeech
         phase = .thinking
         let thinkStart = Date.now
         var firstToken = true
@@ -271,7 +272,7 @@ final class VoiceAgent {
         for turn in turns.dropLast() {
             history.append(turn.speaker == .agent ? .assistant(turn.text) : .user(turn.text))
         }
-        conversation = try await LLMEngine.shared.open(instructions: instructions, history: history, maxTokens: 120)
+        conversation = try await LLMEngine.shared.open(instructions: instructions, history: history, maxTokens: mode == .owner ? 220 : 160)
     }
 
     /// First sentence, lowercased without punctuation, for spotting repeats.

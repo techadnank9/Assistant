@@ -47,11 +47,6 @@ struct SetupView: View {
                             setup.startDownloads()
                         }
                     }
-                    StepRow(icon: "person.text.rectangle", title: "About you",
-                            detail: "So your assistant can tell callers what you do, instead of guessing.",
-                            step: settings.ownerProfile.isEmpty ? .waiting : .done, buttonTitle: "Add") {
-                        editingProfile = true
-                    }
                     StepRow(icon: "bell.fill", title: "Notifications",
                             detail: "Optional. Get a summary after each call.",
                             step: setup.notifications, buttonTitle: "Allow") {

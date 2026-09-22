@@ -21,6 +21,9 @@ final class AppSettings {
     var orbMode: String { didSet { save("orbMode", orbMode) } }
     /// The assistant's voice (an AVSpeechSynthesisVoice identifier); empty picks the best installed.
     var voiceID: String { didSet { save("voiceID", voiceID) } }
+    /// Use the downloaded neural voice (Kokoro) instead of Apple's voices.
+    var naturalVoice: Bool { didSet { save("naturalVoice", naturalVoice) } }
+    var kokoroVoice: String { didSet { save("kokoroVoice", kokoroVoice) } }
 
     var model: ModelOption {
         ModelOption.presets.first { $0.id == modelID } ?? ModelOption(id: modelID, label: modelID)
@@ -36,6 +39,8 @@ final class AppSettings {
         modelID = d.string(forKey: "modelID") ?? ModelOption.default.id
         orbMode = d.string(forKey: "orbMode") ?? "owner"
         voiceID = d.string(forKey: "voiceID") ?? ""
+        naturalVoice = d.object(forKey: "naturalVoice") as? Bool ?? true
+        kokoroVoice = d.string(forKey: "kokoroVoice") ?? "af_heart"
     }
 
     private static var bundledProfile: String {

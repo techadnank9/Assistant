@@ -16,8 +16,33 @@ final class Speaker {
 
     private let tracker = SpeechTracker()
 
+    // Natural (Kokoro) voice: sentences queue up; the next is rendered while the current one plays.
+    private var naturalQueue: [String] = []
+    private var naturalBusy = false
+    private var player: AVAudioPlayer?
+    private var naturalTask: Task<Void, Never>?
+
+    /// True when the downloaded neural voice should be used instead of Apple's.
+    static var usesNaturalVoice: Bool {
+        NaturalVoice.isSupported && AppSettings.shared.naturalVoice
+            && ModelFiles.bytes(for: NaturalVoice.repo) > 0
+    }
+
     /// Speaks `text` through the loudspeaker. Utterances queue up and play in order.
     func speak(_ text: String) {
+        if Self.usesNaturalVoice {
+            Log.info(.audio, "Speaking (natural): \(text)")
+            naturalQueue.append(contentsOf: Self.sentences(text))
+            if !naturalBusy {
+                naturalBusy = true
+                naturalTask = Task { await runNatural() }
+            }
+            return
+        }
+        speakWithApple(text)
+    }
+
+    private func speakWithApple(_ text: String) {
         if synthesizer.delegate == nil { synthesizer.delegate = tracker }
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = voice
@@ -31,8 +56,9 @@ final class Speaker {
     /// roughly twice the expected speaking time.
     func waitUntilSpoken() async {
         let start = Date.now
-        let limit = 4 + Double(tracker.queuedCharacters) / 7   // ~14 characters a second, doubled
-        while tracker.pending > 0 {
+        let characters = tracker.queuedCharacters + naturalQueue.reduce(0) { $0 + $1.count }
+        let limit = 10 + Double(max(characters, 40)) / 5
+        while tracker.pending > 0 || naturalBusy {
             if Date.now.timeIntervalSince(start) > limit {
                 Log.error(.audio, "Speech didn't finish after \(Int(limit))s (speaking: \(synthesizer.isSpeaking)); moving on")
                 stopSpeaking()
@@ -47,6 +73,77 @@ final class Speaker {
     func stopSpeaking() {
         synthesizer.stopSpeaking(at: .immediate)
         tracker.reset()
+        naturalQueue.removeAll()
+        naturalTask?.cancel()
+        player?.stop()
+        naturalBusy = false
+    }
+
+    private func runNatural() async {
+        let voice = AppSettings.shared.kokoroVoice
+        var upcoming: (text: String, audio: Task<Data?, Never>)?
+        while !Task.isCancelled, upcoming != nil || !naturalQueue.isEmpty {
+            let current: (text: String, audio: Data?)
+            if let next = upcoming {
+                current = (next.text, await next.audio.value)
+            } else {
+                let text = naturalQueue.removeFirst()
+                current = (text, await Self.render(text, voice: voice))
+            }
+            upcoming = nil
+            if !naturalQueue.isEmpty {
+                let text = naturalQueue.removeFirst()
+                upcoming = (text, Task { await Self.render(text, voice: voice) })
+            }
+            if let audio = current.audio, await play(audio) { continue }
+            // Neural voice failed for this sentence: say it with Apple's voice instead.
+            speakWithApple(current.text)
+            while tracker.pending > 0, !Task.isCancelled { try? await Task.sleep(for: .milliseconds(100)) }
+        }
+        naturalBusy = false
+    }
+
+    private static func render(_ text: String, voice: String) async -> Data? {
+        do {
+            return try await NaturalVoice.shared.synthesize(text, voice: voice)
+        } catch {
+            Log.error(.audio, "Natural voice couldn't render \"\(text)\": \(error)")
+            return nil
+        }
+    }
+
+    /// Plays WAV data to the end. Returns false if it couldn't play.
+    private func play(_ audio: Data) async -> Bool {
+        do {
+            let player = try AVAudioPlayer(data: audio)
+            self.player = player
+            guard player.play() else {
+                Log.error(.audio, "AVAudioPlayer refused to play")
+                return false
+            }
+            while player.isPlaying, !Task.isCancelled { try? await Task.sleep(for: .milliseconds(50)) }
+            return true
+        } catch {
+            Log.error(.audio, "Couldn't play natural voice audio: \(error)")
+            return false
+        }
+    }
+
+    /// Splits text into sentences so the first can play while the rest render.
+    private static func sentences(_ text: String) -> [String] {
+        var result: [String] = []
+        var current = ""
+        for char in text {
+            current.append(char)
+            if ".!?".contains(char) {
+                let trimmed = current.trimmingCharacters(in: .whitespaces)
+                if !trimmed.isEmpty { result.append(trimmed) }
+                current = ""
+            }
+        }
+        let rest = current.trimmingCharacters(in: .whitespaces)
+        if !rest.isEmpty { result.append(rest) }
+        return result
     }
 
     /// The voice picked in Settings, else the best installed one: premium and enhanced voices

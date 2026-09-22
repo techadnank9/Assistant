@@ -21,6 +21,9 @@ final class SetupModel {
     private(set) var speech: Step = .waiting
     private(set) var model: Step = .waiting
     private(set) var notifications: Step = .waiting
+    /// Optional: the natural (Kokoro) voice. Apple's voice is used until it's ready.
+    private(set) var voice: Step = .waiting
+    var offersNaturalVoice: Bool { NaturalVoice.isSupported && AppSettings.shared.naturalVoice }
 
     /// Microphone, speech and model are required; notifications are optional.
     var isReady: Bool { microphone == .done && speech == .done && model == .done }
@@ -34,6 +37,7 @@ final class SetupModel {
         #if targetEnvironment(simulator)
             model = .done
         #endif
+        voice = ModelFiles.bytes(for: NaturalVoice.repo) > 0 ? .done : .waiting
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         notifications = switch settings.authorizationStatus {
         case .authorized, .provisional, .ephemeral: .done
@@ -47,7 +51,15 @@ final class SetupModel {
     /// Starts every download that doesn't need a tap. Safe to call repeatedly.
     func startDownloads() {
         if speech == .waiting || isFailed(speech) { Task { await installSpeech() } }
-        if model == .waiting || isFailed(model) { Task { await downloadModel() } }
+        if model == .waiting || isFailed(model) {
+            Task {
+                await downloadModel()
+                // One MLX download/load at a time: the voice follows the model.
+                if offersNaturalVoice, voice == .waiting || isFailed(voice) { await downloadVoice() }
+            }
+        } else if offersNaturalVoice, voice == .waiting || isFailed(voice) {
+            Task { await downloadVoice() }
+        }
     }
 
     func requestMicrophone() async {
@@ -111,6 +123,16 @@ final class SetupModel {
             model = .done
         } catch {
             model = .failed(error.localizedDescription)
+        }
+    }
+
+    private func downloadVoice() async {
+        voice = .working("About 330 MB, once.", nil)
+        do {
+            try await NaturalVoice.shared.load()
+            voice = .done
+        } catch {
+            voice = .failed(error.localizedDescription)
         }
     }
 

@@ -38,6 +38,13 @@ struct SetupView: View {
                             step: setup.model, buttonTitle: "Try again") {
                         setup.startDownloads()
                     }
+                    if setup.offersNaturalVoice {
+                        StepRow(icon: "person.wave.2.fill", title: "Natural voice",
+                                detail: "Optional. A human-sounding voice, on the iPhone.",
+                                step: setup.voice, buttonTitle: "Try again") {
+                            setup.startDownloads()
+                        }
+                    }
                     StepRow(icon: "bell.fill", title: "Notifications",
                             detail: "Optional. Get a summary after each call.",
                             step: setup.notifications, buttonTitle: "Allow") {

@@ -22,6 +22,9 @@ packages:
   swift-transformers:
     url: https://github.com/huggingface/swift-transformers
     from: 1.3.4
+  mlx-audio-swift:
+    url: https://github.com/Blaizzy/mlx-audio-swift
+    revision: 01dec7c9bdce3088a6b6b7ab9f2e403458195efb
   twilio-voice-ios:
     url: https://github.com/twilio/twilio-voice-ios
     from: 6.13.7
@@ -53,7 +56,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ai.assistantagent.call
         MARKETING_VERSION: "1.0"
-        CURRENT_PROJECT_VERSION: "8"
+        CURRENT_PROJECT_VERSION: "9"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: YES
@@ -72,3 +75,7 @@ targets:
         product: Tokenizers
       - package: twilio-voice-ios
         product: TwilioVoice
+      - package: mlx-audio-swift
+        product: MLXAudioTTS
+      - package: mlx-audio-swift
+        product: MLXAudioCore

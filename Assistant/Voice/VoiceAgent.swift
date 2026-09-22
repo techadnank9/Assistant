@@ -173,6 +173,9 @@ final class VoiceAgent {
         guard let conversation else { return "" }
         let earlierOpenings = Set(turns.filter { $0.speaker == .agent }.map { Self.opening($0.text) })
         var repeating = false
+        // The neural voice also runs on MLX: let the reply finish before rendering speech, so the
+        // two models never share the GPU at once. Apple's voice can start mid-reply.
+        let speakWhileThinking = !(io.usesSystemSpeech && Speaker.usesNaturalVoice)
         phase = .thinking
         let thinkStart = Date.now
         var firstToken = true
@@ -199,6 +202,7 @@ final class VoiceAgent {
                     repeating = true
                     break
                 }
+                guard speakWhileThinking else { break }
                 spoken = visible.distance(from: visible.startIndex, to: end)
                 await queue(sentence)
             }

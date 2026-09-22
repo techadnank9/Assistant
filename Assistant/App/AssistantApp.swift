@@ -73,7 +73,11 @@ struct RootView: View {
             }
             Tab("Settings", systemImage: "gearshape") { SettingsView() }
         }
-        .task { await chat.loadModel() }
+        .task {
+            await chat.loadModel()
+            // Warm the natural voice after the language model, so the first reply isn't delayed.
+            if Speaker.usesNaturalVoice { try? await NaturalVoice.shared.load() }
+        }
         .fullScreenCover(item: Binding(get: { calls.activeAgent.map(AgentBox.init) }, set: { _ in })) { box in
             LiveCallView(agent: box.agent, title: "Live call")
         }

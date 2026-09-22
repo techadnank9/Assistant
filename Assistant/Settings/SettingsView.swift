@@ -209,30 +209,66 @@ private struct ModelSection: View {
 }
 
 
-/// Settings → Voice: which voice the assistant speaks with, with a preview.
+/// Settings → Voice: the natural (Kokoro) voice or an Apple voice, with a preview.
 private struct VoiceSection: View {
     @Bindable var settings: AppSettings
-    @State private var previewer = AVSpeechSynthesizer()
-    private let voices = Speaker.availableVoices()
+    @State private var previewer = Speaker()
+    @State private var downloaded = ModelFiles.bytes(for: NaturalVoice.repo) > 0
+    @State private var downloading = false
+    @State private var failure: String?
+    private let appleVoices = Speaker.availableVoices()
 
     var body: some View {
         Section {
-            Picker("Voice", selection: $settings.voiceID) {
-                Text("Best available").tag("")
-                ForEach(voices, id: \.identifier) { voice in
-                    Text("\(voice.name) · \(Self.quality(voice))").tag(voice.identifier)
+            if NaturalVoice.isSupported {
+                Toggle("Natural voice", isOn: $settings.naturalVoice)
+                if settings.naturalVoice {
+                    Picker("Voice", selection: $settings.kokoroVoice) {
+                        ForEach(NaturalVoice.voices) { Text($0.label).tag($0.id) }
+                    }
+                    if !downloaded {
+                        Button(downloading ? "Downloading natural voice…" : "Download natural voice (about 330 MB)",
+                               systemImage: "arrow.down.circle") {
+                            downloading = true
+                            failure = nil
+                            Task {
+                                do {
+                                    try await NaturalVoice.shared.load()
+                                } catch {
+                                    failure = error.localizedDescription
+                                }
+                                downloading = false
+                                downloaded = ModelFiles.bytes(for: NaturalVoice.repo) > 0
+                            }
+                        }
+                        .disabled(downloading)
+                    }
+                    if let failure {
+                        Text(failure).font(.footnote).foregroundStyle(.red)
+                    }
+                }
+            }
+            if !NaturalVoice.isSupported || !settings.naturalVoice {
+                Picker("Voice", selection: $settings.voiceID) {
+                    Text("Best available").tag("")
+                    ForEach(appleVoices, id: \.identifier) { voice in
+                        Text("\(voice.name) · \(Self.quality(voice))").tag(voice.identifier)
+                    }
                 }
             }
             Button("Preview", systemImage: "play.circle") {
-                let utterance = AVSpeechUtterance(string: "Hi, you've reached \(settings.ownerName)'s phone. Can I take a message?")
-                utterance.voice = Speaker.chosenVoice()
-                previewer.stopSpeaking(at: .immediate)
-                previewer.speak(utterance)
+                // Playback mode, so the silent switch doesn't mute the preview.
+                try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
+                try? AVAudioSession.sharedInstance().setActive(true)
+                previewer.stopSpeaking()
+                previewer.speak("Hi, you've reached \(settings.ownerName)'s phone. Can I take a message?")
             }
         } header: {
             Text("Voice")
         } footer: {
-            Text("For a more natural voice, download an Enhanced or Premium English voice in the iPhone's Settings → Accessibility → Spoken Content → Voices, then pick it here.")
+            Text(NaturalVoice.isSupported && settings.naturalVoice
+                 ? "A neural voice (Kokoro) that runs on this iPhone and sounds much more human. It downloads once."
+                 : "For a more natural Apple voice, download an Enhanced or Premium English voice in the iPhone's Settings → Accessibility → Spoken Content → Voices, then pick it here.")
         }
     }
 

@@ -34,7 +34,7 @@ final class ChatModel {
             try await LLMEngine.shared.load(AppSettings.shared.model) { fraction in
                 Task { @MainActor in self.status = .loading(fraction) }
             }
-            conversation = try await LLMEngine.shared.open(instructions: Prompts.chat(owner: AppSettings.shared.ownerName, profile: AppSettings.shared.ownerProfile), maxTokens: 512)
+            conversation = try await LLMEngine.shared.open(instructions: Self.instructions(), maxTokens: 512)
             status = .ready
         } catch {
             Log.error(.model, "Chat couldn't start: \(error)")
@@ -44,7 +44,9 @@ final class ChatModel {
 
     func send(_ text: String) {
         let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard canSend, !prompt.isEmpty, let conversation else { return }
+        guard canSend, !prompt.isEmpty, let opened = conversation else { return }
+        // A new chat starts from a fresh briefing, so it knows about calls taken since launch.
+        let isFirst = messages.isEmpty
 
         messages.append(Message(role: .user, text: prompt))
         let reply = Message(role: .assistant, text: "")
@@ -56,6 +58,12 @@ final class ChatModel {
             var chunks = 0
             var raw = ""
             do {
+                var conversation = opened
+                if isFirst {
+                    await LLMEngine.shared.close(opened)
+                    conversation = try await LLMEngine.shared.open(instructions: Self.instructions(), maxTokens: 512)
+                    self.conversation = conversation
+                }
                 for try await chunk in try await LLMEngine.shared.respond(in: conversation, to: prompt) {
                     raw += chunk
                     chunks += 1
@@ -70,6 +78,11 @@ final class ChatModel {
             }
             status = .ready
         }
+    }
+
+    private static func instructions() -> String {
+        Prompts.chat(owner: AppSettings.shared.ownerName, profile: AppSettings.shared.ownerProfile,
+                     briefing: MessageStore.shared.briefing())
     }
 
     /// Looks the reply up by id so a cleared conversation can't be written into.
@@ -88,7 +101,7 @@ final class ChatModel {
         tokensPerSecond = nil
         Task {
             if let conversation { await LLMEngine.shared.close(conversation) }
-            conversation = try? await LLMEngine.shared.open(instructions: Prompts.chat(owner: AppSettings.shared.ownerName, profile: AppSettings.shared.ownerProfile), maxTokens: 512)
+            conversation = try? await LLMEngine.shared.open(instructions: Self.instructions(), maxTokens: 512)
         }
     }
 }

@@ -9,7 +9,13 @@ struct ModelOption: Identifiable, Hashable, Sendable {
 
     static let base = ModelOption(id: "mlx-community/Qwen3-1.7B-4bit", label: "Qwen3 1.7B (base)")
     static let small = ModelOption(id: "mlx-community/Qwen3-0.6B-4bit", label: "Qwen3 0.6B (fastest)")
-    static let presets: [ModelOption] = [.base, .small]
+    /// Fine-tuned for answering calls (finetune/, round 4+). Only listed once it has beaten the base model.
+    static let tuned = ModelOption(id: "adnank9/qwen3-1.7b-phone-assistant-4bit", label: "Phone assistant 1.7B (fine-tuned)")
+    static let tunedShipped = false
+
+    static let presets: [ModelOption] = tunedShipped ? [.tuned, .base, .small] : [.base, .small]
+    /// What new installs (and anyone who never picked a model) download.
+    static var `default`: ModelOption { tunedShipped ? .tuned : .base }
 
     var configuration: ModelConfiguration {
         ModelConfiguration(id: id, extraEOSTokens: ["<|im_end|>"])
@@ -17,14 +23,16 @@ struct ModelOption: Identifiable, Hashable, Sendable {
 }
 
 enum Prompts {
-    static func chat(owner: String, profile: String) -> String {
+    static func chat(owner: String, profile: String, briefing: String) -> String {
         """
         You are \(owner)'s personal AI assistant, running privately on \(owner)'s iPhone. \
         When someone asks who you are, say you're \(owner)'s assistant. You answer calls when \(owner) \
         can't pick up, take messages, and can tell people about \(owner)'s work. \
         Never share personal details about \(owner) such as address, schedule or whereabouts. \
-        Keep replies short and friendly: one to three sentences, no lists, no markdown.
+        Keep replies short and friendly: one to three sentences, no lists, no markdown. \
+        When \(owner) asks about calls or messages, answer from the list below; don't invent any.
         """ + (profile.isEmpty ? "" : "\n\nAbout \(owner) (professional, OK to share):\n\(profile)")
+            + "\n\n\(briefing)"
     }
 
     /// Marker the model appends when the call should end. Stripped before speaking.
@@ -35,13 +43,14 @@ enum Prompts {
     }
 
     /// The owner talking to their own assistant by voice.
-    static func voiceChat(owner: String, profile: String) -> String {
+    static func voiceChat(owner: String, profile: String, briefing: String) -> String {
         """
         You are \(owner)'s personal AI assistant, running privately on \(owner)'s iPhone, and you're \
         talking with \(owner) by voice right now. You also answer \(owner)'s calls and take messages. \
         Be warm and useful. You are speaking out loud: reply in one to three short sentences, never use lists, \
-        emoji or markdown. If you don't know something, say so briefly.
-        """ + (profile.isEmpty ? "" : "\n\nAbout \(owner):\n\(profile)")
+        emoji or markdown. If you don't know something, say so briefly. When \(owner) asks who called or \
+        about messages, answer from the list below and never invent calls.
+        """ + (profile.isEmpty ? "" : "\n\nAbout \(owner):\n\(profile)") + "\n\n\(briefing)"
     }
 
     static func greeting(owner: String) -> String {

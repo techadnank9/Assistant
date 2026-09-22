@@ -4,7 +4,7 @@ cd "$(dirname "$0")"
 export HF_HUB_DISABLE_XET=1
 {
   echo "== personas $(date)"
-  uv run personas.py --per-category 9 --heldout-per-category 2 --out data4/personas.json --heldout data4/heldout_personas.json
+  uv run personas.py --per-category 12 --heldout-per-category 2 --out data4/personas.json --heldout data4/heldout_personas.json
   echo "== dataset $(date)"
   uv run make_dataset.py --out data4 --calls-per-scenario 1 --personas data4/personas.json --persona-calls 1 --real-share 0.1
   echo "== stageA done $(date)"

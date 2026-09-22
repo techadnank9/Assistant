@@ -117,7 +117,7 @@ final class VoiceAgent {
         let profile = AppSettings.shared.ownerProfile
         conversation = try await LLMEngine.shared.open(
             instructions: mode == .owner
-                ? Prompts.voiceChat(owner: owner, profile: profile)
+                ? Prompts.voiceChat(owner: owner, profile: profile, briefing: MessageStore.shared.briefing())
                 : Prompts.call(owner: owner, callerNumber: callerNumber, profile: profile),
             history: [.assistant(greeting)],
             maxTokens: 120

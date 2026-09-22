@@ -9,7 +9,7 @@ from mlx_lm.sample_utils import make_logits_processors, make_sampler
 OWNER = "Adnan"
 END = "[END]"
 BASE_MODEL = "mlx-community/Qwen3-1.7B-4bit"
-TEACHER_MODEL = "mlx-community/Qwen3-14B-4bit"   # data (strongest that fits in 16 GB)
+TEACHER_MODEL = "mlx-community/Qwen3-8B-4bit"    # data (14B fits but downloads too slowly here)
 JUDGE_MODEL = "mlx-community/Qwen3-8B-4bit"      # caller + grader in evaluation (faster)
 
 _profile = Path(__file__).with_name("owner_profile.txt")

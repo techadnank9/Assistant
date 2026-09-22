@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 
 struct SettingsView: View {
@@ -35,6 +36,7 @@ struct SettingsView: View {
                 }
 
                 ModelSection(settings: settings)
+                VoiceSection(settings: settings)
             }
             .navigationTitle("Settings")
             .toolbar {
@@ -203,5 +205,42 @@ private struct ModelSection: View {
 
     static func size(_ bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+}
+
+
+/// Settings → Voice: which voice the assistant speaks with, with a preview.
+private struct VoiceSection: View {
+    @Bindable var settings: AppSettings
+    @State private var previewer = AVSpeechSynthesizer()
+    private let voices = Speaker.availableVoices()
+
+    var body: some View {
+        Section {
+            Picker("Voice", selection: $settings.voiceID) {
+                Text("Best available").tag("")
+                ForEach(voices, id: \.identifier) { voice in
+                    Text("\(voice.name) · \(Self.quality(voice))").tag(voice.identifier)
+                }
+            }
+            Button("Preview", systemImage: "play.circle") {
+                let utterance = AVSpeechUtterance(string: "Hi, you've reached \(settings.ownerName)'s phone. Can I take a message?")
+                utterance.voice = Speaker.chosenVoice()
+                previewer.stopSpeaking(at: .immediate)
+                previewer.speak(utterance)
+            }
+        } header: {
+            Text("Voice")
+        } footer: {
+            Text("For a more natural voice, download an Enhanced or Premium English voice in the iPhone's Settings → Accessibility → Spoken Content → Voices, then pick it here.")
+        }
+    }
+
+    private static func quality(_ voice: AVSpeechSynthesisVoice) -> String {
+        switch voice.quality {
+        case .premium: "Premium"
+        case .enhanced: "Enhanced"
+        default: "Standard"
+        }
     }
 }

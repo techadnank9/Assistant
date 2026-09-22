@@ -8,11 +8,23 @@ final class Speaker {
     private let voice: AVSpeechSynthesisVoice?
 
     init(language: String = "en-US") {
-        // Premium and enhanced voices sound far more human; use the best one installed.
-        let voices = AVSpeechSynthesisVoice.speechVoices().filter { $0.language == language }
-        voice = voices.max { $0.quality.rawValue < $1.quality.rawValue }
-            ?? AVSpeechSynthesisVoice(language: language)
+        voice = Self.chosenVoice(language: language)
         synthesizer.usesApplicationAudioSession = true
+    }
+
+    /// The voice picked in Settings, else the best installed one: premium and enhanced voices
+    /// sound far more human than the default compact ones.
+    static func chosenVoice(language: String = "en-US") -> AVSpeechSynthesisVoice? {
+        let picked = AppSettings.shared.voiceID
+        if !picked.isEmpty, let voice = AVSpeechSynthesisVoice(identifier: picked) { return voice }
+        return availableVoices(language: language).first ?? AVSpeechSynthesisVoice(language: language)
+    }
+
+    /// English voices on this iPhone, best quality first.
+    static func availableVoices(language: String = "en-US") -> [AVSpeechSynthesisVoice] {
+        AVSpeechSynthesisVoice.speechVoices()
+            .filter { $0.language == language }
+            .sorted { ($0.quality.rawValue, $0.name) > ($1.quality.rawValue, $1.name) }
     }
 
     /// Renders `text` and returns the audio, converted to `format`.

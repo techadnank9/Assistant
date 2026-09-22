@@ -16,6 +16,25 @@ final class MessageStore {
         }
     }()
 
+    /// What the owner's assistant knows right now: the date and the latest messages it took.
+    /// Added to the Chat and "My assistant" prompts so "who called?" has an answer.
+    func briefing(limit: Int = 8) -> String {
+        let now = Date.now.formatted(date: .complete, time: .shortened)
+        var descriptor = FetchDescriptor<CallRecord>(sortBy: [SortDescriptor(\.date, order: .reverse)])
+        descriptor.fetchLimit = limit
+        let records = (try? container.mainContext.fetch(descriptor)) ?? []
+        guard !records.isEmpty else { return "It is \(now). No calls or messages yet." }
+        let lines = records.map { r in
+            let when = r.date.formatted(.relative(presentation: .named))
+            let who = r.callerName ?? r.callerNumber ?? "Unknown caller"
+            let callback = r.callback.map { ", callback \($0)" } ?? ""
+            let urgent = r.isUrgent ? " (urgent)" : ""
+            let test = r.isTest ? " [test call]" : ""
+            return "- \(when): \(who)\(urgent)\(test): \(r.summary ?? "no summary")\(callback)"
+        }
+        return "It is \(now). Messages you took, newest first:\n" + lines.joined(separator: "\n")
+    }
+
     func save(transcript: [Turn], callerNumber: String?, startedAt: Date, isTest: Bool) async {
         // Nothing but our own greeting: the caller hung up straight away.
         guard transcript.contains(where: { $0.speaker == .caller }) else {

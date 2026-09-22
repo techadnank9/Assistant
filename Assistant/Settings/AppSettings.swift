@@ -17,6 +17,8 @@ final class AppSettings {
     /// Play the call through the phone so you can hear the agent and the caller.
     var listenIn: Bool { didSet { save("listenIn", listenIn) } }
     var modelID: String { didSet { save("modelID", modelID) } }
+    /// What tapping the orb does: talk to your assistant, or practise a call.
+    var orbMode: String { didSet { save("orbMode", orbMode) } }
 
     var model: ModelOption {
         ModelOption.presets.first { $0.id == modelID } ?? ModelOption(id: modelID, label: modelID)
@@ -30,6 +32,7 @@ final class AppSettings {
         twilioSecret = d.string(forKey: "twilioSecret") ?? ""
         listenIn = d.object(forKey: "listenIn") as? Bool ?? true
         modelID = d.string(forKey: "modelID") ?? ModelOption.base.id
+        orbMode = d.string(forKey: "orbMode") ?? "owner"
     }
 
     private static var bundledProfile: String {

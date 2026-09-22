@@ -30,6 +30,20 @@ enum Prompts {
     /// Marker the model appends when the call should end. Stripped before speaking.
     static let endMarker = "[END]"
 
+    static func ownerGreeting(owner: String) -> String {
+        "Hi \(owner), what can I do for you?"
+    }
+
+    /// The owner talking to their own assistant by voice.
+    static func voiceChat(owner: String, profile: String) -> String {
+        """
+        You are \(owner)'s personal AI assistant, running privately on \(owner)'s iPhone, and you're \
+        talking with \(owner) by voice right now. You also answer \(owner)'s calls and take messages. \
+        Be warm and useful. You are speaking out loud: reply in one to three short sentences, never use lists, \
+        emoji or markdown. If you don't know something, say so briefly.
+        """ + (profile.isEmpty ? "" : "\n\nAbout \(owner):\n\(profile)")
+    }
+
     static func greeting(owner: String) -> String {
         "Hi, you've reached \(owner)'s phone. \(owner) can't pick up right now, this is their assistant. Can I take a message?"
     }

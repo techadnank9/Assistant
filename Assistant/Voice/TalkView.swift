@@ -8,9 +8,13 @@ struct TalkView: View {
     var onClose: (() -> Void)?
     @State private var agent: VoiceAgent?
     @State private var lastError: String?
+    @State private var settings = AppSettings.shared
+
+    private var mode: VoiceAgent.Mode { VoiceAgent.Mode(rawValue: settings.orbMode) ?? .owner }
 
     var body: some View {
-        LiveCallView(agent: agent, title: "Assistant", error: lastError, onStart: begin, onClose: close)
+        LiveCallView(agent: agent, title: "Assistant", error: lastError, onStart: begin, onClose: close,
+                     mode: Binding(get: { mode }, set: { settings.orbMode = $0.rawValue }))
             .task { if autoStart { begin() } }
     }
 
@@ -29,13 +33,15 @@ struct TalkView: View {
         #else
             let io: AudioIO = LocalAudio()
         #endif
-        let agent = VoiceAgent(io: io, owner: AppSettings.shared.ownerName, callerNumber: nil)
+        let agent = VoiceAgent(io: io, owner: AppSettings.shared.ownerName, callerNumber: nil, mode: mode)
         self.agent = agent
         lastError = nil
         Task {
             let transcript = await agent.run()
             lastError = agent.error
             self.agent = nil
+            // Only practice calls produce a message; talking to your own assistant doesn't.
+            guard agent.mode == .caller else { return }
             await MessageStore.shared.save(
                 transcript: transcript, callerNumber: nil, startedAt: agent.startedAt, isTest: true)
         }
@@ -50,6 +56,8 @@ struct LiveCallView: View {
     var error: String?
     var onStart: (() -> Void)?
     var onClose: (() -> Void)?
+    /// Shown as a picker while idle (home screen only).
+    var mode: Binding<VoiceAgent.Mode>?
     @State private var showTranscript = false
 
     private var phase: VoiceAgent.Phase { agent?.phase ?? .idle }
@@ -68,6 +76,7 @@ struct LiveCallView: View {
             }
             .padding(.top, 24)
             .frame(maxWidth: .infinity)
+
             .overlay(alignment: .topLeading) {
                 if let onClose {
                     Button(action: onClose) {
@@ -81,6 +90,15 @@ struct LiveCallView: View {
                     .padding(.leading, 16)
                     .padding(.top, 12)
                 }
+            }
+
+            if let mode, agent == nil {
+                Picker("Mode", selection: mode) {
+                    ForEach(VoiceAgent.Mode.allCases) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 280)
+                .padding(.top, 16)
             }
 
             Spacer(minLength: 24)
@@ -160,7 +178,12 @@ struct LiveCallView: View {
     /// otherwise the agent's latest line.
     private var currentLine: String {
         let model = ModelStatus.shared.message
-        guard let agent else { return error ?? model ?? "Tap the orb to talk" }
+        guard let agent else {
+            let prompt = mode?.wrappedValue == .caller
+                ? "Tap the orb and pretend you're calling"
+                : "Tap the orb to talk"
+            return error ?? model ?? prompt
+        }
         if agent.phase == .listening, !agent.caption.isEmpty { return agent.caption }
         if agent.phase == .starting { return agent.status ?? model ?? "Getting ready…" }
         return agent.turns.last(where: { $0.speaker == .agent })?.text ?? ""

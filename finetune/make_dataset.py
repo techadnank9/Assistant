@@ -23,24 +23,29 @@ def main():
     parser.add_argument("--scenarios", type=int, default=len(TRAIN), help="use only the first N (for a trial run)")
     parser.add_argument("--out", default="data")
     parser.add_argument("--append", action="store_true", help="keep earlier generated calls (data/generated.jsonl)")
+    parser.add_argument("--personas", help="JSON list of extra caller personas (from personas.py)")
+    parser.add_argument("--persona-calls", type=int, default=1, help="calls per generated persona")
     parser.add_argument("--real-share", type=float, default=0.1, help="fraction of training rows from Taskmaster")
     args = parser.parse_args()
 
     teacher = Model(TEACHER_MODEL)
     examples = []
-    for i, scenario in enumerate(TRAIN[: args.scenarios]):
-        for n in range(args.calls_per_scenario):
+    plan = [(s, args.calls_per_scenario) for s in TRAIN[: args.scenarios]]
+    if args.personas:
+        plan += [(p, args.persona_calls) for p in json.load(open(args.personas))]
+    for i, (scenario, calls) in enumerate(plan):
+        for n in range(calls):
             number = random.choice(NUMBERS)
             call = simulate(teacher, teacher, scenario, agent_prompt(caller_number=number) + TEACHER_STYLE)
             if not is_clean(call):
-                print(f"[{i + 1}/{len(TRAIN)}] call {n + 1}: rejected (loop, long reply or no ending)")
+                print(f"[{i + 1}/{len(plan)}] call {n + 1}: rejected (loop, long reply or no ending)", flush=True)
                 continue
             # Swap in the runtime prompt, then emit one example per assistant reply.
             call[0] = {"role": "system", "content": agent_prompt(caller_number=number)}
             for cut in range(3, len(call) + 1):
                 if call[cut - 1]["role"] == "assistant":
                     examples.append({"messages": call[:cut]})
-            print(f"[{i + 1}/{len(TRAIN)}] call {n + 1}: {len(call) - 2} turns")
+            print(f"[{i + 1}/{len(plan)}] call {n + 1}: {len(call) - 2} turns", flush=True)
 
     cache = Path(args.out) / "generated.jsonl"
     if args.append and cache.exists():

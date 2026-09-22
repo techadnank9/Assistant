@@ -16,6 +16,14 @@ struct Turn: Identifiable, Codable, Hashable {
 final class VoiceAgent {
     enum Phase: Equatable { case idle, starting, listening, thinking, speaking, ended }
 
+    /// `.caller`: answers a caller and takes a message (real calls, "Test a call").
+    /// `.owner`: the owner talking to their own assistant, like a voice chat.
+    enum Mode: String, CaseIterable, Identifiable {
+        case owner, caller
+        var id: String { rawValue }
+        var label: String { self == .owner ? "My assistant" : "Test a call" }
+    }
+
     private(set) var phase: Phase = .starting
     private(set) var turns: [Turn] = []
     private(set) var caption = ""
@@ -29,6 +37,7 @@ final class VoiceAgent {
     nonisolated var audioLevel: Float { io.level }
     private let owner: String
     private let callerNumber: String?
+    let mode: Mode
     private let listener = Listener()
     private let speaker = Speaker()
     private var conversation: UUID?
@@ -38,7 +47,8 @@ final class VoiceAgent {
     /// Longest a call may run before the agent wraps up.
     private let maxDuration: TimeInterval = 240
 
-    init(io: AudioIO, owner: String, callerNumber: String?) {
+    init(io: AudioIO, owner: String, callerNumber: String?, mode: Mode = .caller) {
+        self.mode = mode
         self.io = io
         self.owner = owner
         self.callerNumber = callerNumber
@@ -92,7 +102,7 @@ final class VoiceAgent {
 
         // Talk straight away: the greeting needs neither the recognizer nor the model, so the
         // orb answers even while first-time downloads are still running.
-        let greeting = Prompts.greeting(owner: owner)
+        let greeting = mode == .owner ? Prompts.ownerGreeting(owner: owner) : Prompts.greeting(owner: owner)
         try await say(greeting)
 
         phase = .starting
@@ -104,9 +114,11 @@ final class VoiceAgent {
         status = nil
         Log.info(.voice, "Loading model")
         try await LLMEngine.shared.load(AppSettings.shared.model)
+        let profile = AppSettings.shared.ownerProfile
         conversation = try await LLMEngine.shared.open(
-            instructions: Prompts.call(
-                owner: owner, callerNumber: callerNumber, profile: AppSettings.shared.ownerProfile),
+            instructions: mode == .owner
+                ? Prompts.voiceChat(owner: owner, profile: profile)
+                : Prompts.call(owner: owner, callerNumber: callerNumber, profile: profile),
             history: [.assistant(greeting)],
             maxTokens: 120
         )
@@ -134,22 +146,25 @@ final class VoiceAgent {
                 Log.info(.voice, "No speech before timeout")
                 silentTurns += 1
                 if silentTurns >= 2 {
-                    try await say("I didn't catch anything, so I'll let you go. Goodbye!")
+                    try await say(mode == .owner
+                        ? "I'll be here whenever you need me."
+                        : "I didn't catch anything, so I'll let you go. Goodbye!")
                     return
                 }
-                try await say("Sorry, are you still there?")
+                try await say(mode == .owner ? "I'm listening." : "Sorry, are you still there?")
                 continue
             }
             silentTurns = 0
             Log.info(.voice, "Caller: \(heard)")
             turns.append(Turn(speaker: .caller, text: heard))
 
-            let overtime = Date.now.timeIntervalSince(startedAt) > maxDuration
+            // A caller gets a time limit; the owner can talk as long as they like.
+            let overtime = mode == .caller && Date.now.timeIntervalSince(startedAt) > maxDuration
             let prompt = overtime
                 ? heard + "\n\n(We're out of time. Read back the message and say goodbye now.)"
                 : heard
             let reply = try await think(and: prompt)
-            if reply.contains(Prompts.endMarker) || overtime { return }
+            if mode == .caller, reply.contains(Prompts.endMarker) || overtime { return }
         }
     }
 

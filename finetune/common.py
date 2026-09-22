@@ -9,7 +9,8 @@ from mlx_lm.sample_utils import make_logits_processors, make_sampler
 OWNER = "Adnan"
 END = "[END]"
 BASE_MODEL = "mlx-community/Qwen3-1.7B-4bit"
-TEACHER_MODEL = "mlx-community/Qwen3-8B-4bit"
+TEACHER_MODEL = "mlx-community/Qwen3-14B-4bit"   # data (strongest that fits in 16 GB)
+JUDGE_MODEL = "mlx-community/Qwen3-8B-4bit"      # caller + grader in evaluation (faster)
 
 _profile = Path(__file__).with_name("owner_profile.txt")
 PROFILE = _profile.read_text().strip() if _profile.exists() else ""
@@ -106,7 +107,31 @@ def simulate(agent: Model, caller: Model, scenario: dict, agent_system: str, max
     return agent_view
 
 
-def is_clean(call: list[dict], max_words: int = 40) -> bool:
+MARKDOWN = re.compile(r"(^|\n)\s*([-*•#]|\d+\.)\s|\*\*")
+
+
+def reply_score(reply: str, history: list[dict], should_end: bool) -> float:
+    """Rule-based quality of one assistant reply (higher is better). Deterministic, no model needed."""
+    text = reply.replace(END, "").strip()
+    words = len(text.split())
+    score = 10.0
+    if words == 0:
+        return 0.0
+    if words > 25:
+        score -= min(4.0, (words - 25) * 0.15)
+    if MARKDOWN.search(text):
+        score -= 2
+    if (END in reply) != should_end:
+        score -= 3            # hung up too early, or kept a finished call going
+    earlier = {m["content"].replace(END, "").strip().lower() for m in history if m["role"] == "assistant"}
+    if text.lower() in earlier:
+        score -= 3            # repeated itself
+    if text.count("?") > 1:
+        score -= 1            # asked several things at once
+    return score
+
+
+def is_clean(call: list[dict], max_words: int = 30) -> bool:
     """Rejects calls where either side loops, replies run long, or the call never ends."""
     agent = [m["content"] for m in call if m["role"] == "assistant"]
     caller = [m["content"] for m in call if m["role"] == "user"]

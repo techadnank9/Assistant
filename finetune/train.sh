@@ -5,13 +5,14 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 BASE=Qwen/Qwen3-1.7B
-OUT=models/qwen3-1.7b-assistant-4bit
+OUT=${OUT:-models/qwen3-1.7b-assistant-4bit}
+DATA=${DATA:-data}
 ITERS=${ITERS:-400}
 rm -rf adapters best
 
 uv run mlx_lm.lora \
   --model "$BASE" \
-  --train --data data \
+  --train --data "$DATA" \
   --fine-tune-type lora --num-layers 16 \
   --mask-prompt \
   --batch-size 4 --iters "$ITERS" --learning-rate 1e-4 \

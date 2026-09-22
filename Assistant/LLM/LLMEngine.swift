@@ -53,6 +53,7 @@ actor LLMEngine {
         #endif
         conversations.removeAll()
         container = nil
+        await GPUMemory.configure()
         let device = await Self.device()
         let start = Date.now
         Log.info(.model, "Loading \(option.id) on \(device)")

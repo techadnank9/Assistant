@@ -180,6 +180,9 @@ actor NaturalVoice {
             text: text, voice: voice, refAudio: nil, refText: nil, language: nil,
             generationParameters: model.defaultGenerationParameters)
         let samples = audio.asArray(Float.self)
+        // Synthesis allocates a lot of short-lived buffers. Give them back rather than letting the
+        // cache sit on memory the model and the call audio need.
+        GPUMemory.releaseCache("after speaking")
         let seconds = Double(samples.count) / Double(model.sampleRate)
         Log.info(.audio, "Natural voice: \(String(format: "%.1f", seconds))s of audio in \(String(format: "%.2f", Date.now.timeIntervalSince(start)))s")
         return Self.wav(samples, sampleRate: model.sampleRate)

@@ -218,6 +218,7 @@ final class VoiceAgent {
         }
         let visible = turns[index].text
         Log.info(.voice, "Agent: \(visible)")
+        Log.info(.voice, "Memory: \(GPUMemory.usage)")
         if spoken < visible.count {
             await queue(String(visible.dropFirst(spoken)))
         }

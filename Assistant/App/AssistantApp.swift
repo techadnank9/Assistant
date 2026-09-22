@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         // Pick up model downloads that continued (or finished) while the app was closed.
         BackgroundDownloads.shared.reconnect()
         // PushKit has to be ready at launch, including when iOS wakes us for a call.
+        GPUMemory.configure()
         CallManager.shared.startListeningForCalls()
         UNUserNotificationCenter.current().delegate = self
         return true

@@ -11,10 +11,13 @@ struct SettingsView: View {
             Form {
                 Section {
                     TextField("Your name", text: $settings.ownerName)
+                    TextField("What you do, for callers who ask", text: $settings.ownerProfile, axis: .vertical)
+                        .lineLimit(3...8)
+                        .font(.footnote)
                 } header: {
                     Text("Owner")
                 } footer: {
-                    Text("The assistant tells callers it's answering for this name.")
+                    Text("The assistant answers for this name and can tell recruiters and collaborators about your work. It never shares personal details.")
                 }
 
                 Section {

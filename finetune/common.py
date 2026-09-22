@@ -1,14 +1,18 @@
 """Shared pieces: the agent's prompt (kept identical to the app), model helpers, and simulated calls."""
 
 import re
+from pathlib import Path
 
 from mlx_lm import generate, load
-from mlx_lm.sample_utils import make_sampler
+from mlx_lm.sample_utils import make_logits_processors, make_sampler
 
 OWNER = "Adnan"
 END = "[END]"
 BASE_MODEL = "mlx-community/Qwen3-1.7B-4bit"
 TEACHER_MODEL = "mlx-community/Qwen3-8B-4bit"
+
+_profile = Path(__file__).with_name("owner_profile.txt")
+PROFILE = _profile.read_text().strip() if _profile.exists() else ""
 
 
 def greeting(owner: str = OWNER) -> str:
@@ -27,10 +31,13 @@ def agent_prompt(owner: str = OWNER, caller_number: str | None = None) -> str:
         "- You are speaking out loud. Reply in one or two short, warm sentences. Never use lists, emoji or markdown.\n"
         "- Ask for one missing thing at a time: name, then reason, then callback number or time if they haven't said it.\n"
         f"- Never promise what {owner} will do. Say you'll pass the message on.\n"
-        f"- Don't give out personal information about {owner}.\n"
+        f"- Don't give out personal information about {owner}: no address, schedule, whereabouts or other numbers.\n"
+        f"- If a caller asks about {owner}'s work, you may share what's in the profile below in a sentence, "
+        "then take their message.\n"
         "- The caller's words come from speech recognition and may have small errors; don't point them out.\n"
         "- When you have the message, or the caller says goodbye, read back the key details in one sentence, "
         f"say goodbye, and end your reply with {END}."
+        + (f"\n\nAbout {owner} (professional, OK to share):\n{PROFILE}" if PROFILE else "")
     )
 
 
@@ -59,7 +66,8 @@ class Model:
         prompt = self.tokenizer.apply_chat_template(
             messages, add_generation_prompt=True, tokenize=False, enable_thinking=False)
         text = generate(self.model, self.tokenizer, prompt=prompt, max_tokens=max_tokens,
-                        sampler=make_sampler(temp=temp, top_p=0.8))
+                        sampler=make_sampler(temp=temp, top_p=0.8),
+                        logits_processors=make_logits_processors(repetition_penalty=1.1))
         return clean(text)
 
 
@@ -96,3 +104,14 @@ def simulate(agent: Model, caller: Model, scenario: dict, agent_system: str, max
         if END in reply:
             break
     return agent_view
+
+
+def is_clean(call: list[dict], max_words: int = 40) -> bool:
+    """Rejects calls where either side loops, replies run long, or the call never ends."""
+    agent = [m["content"] for m in call if m["role"] == "assistant"]
+    caller = [m["content"] for m in call if m["role"] == "user"]
+    if not agent[-1].endswith(END):
+        return False
+    if len(set(agent)) < len(agent) or len(set(caller)) < len(caller):
+        return False
+    return all(len(a.replace(END, "").split()) <= max_words for a in agent[1:])

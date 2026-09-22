@@ -27,11 +27,25 @@ TRAIN = [
     {"persona": "A political survey caller asking for five minutes of Adnan's time.", "style": "scripted"},
 ]
 
+# Calls that follow from the owner's actual work (see owner_profile.txt).
+TRAIN += [
+    {"persona": "Rachel, a technical recruiter at Anthropic, hiring for an applied AI engineer role focused on voice agents; wants a 30 minute intro call, email rachel.k@anthropic.com.", "style": "warm and polished, asks what Adnan works on"},
+    {"persona": "Marcus, an engineering manager at a logistics startup who saw Adnan's Kafka and Hours of Service work, wants to talk about a contract; callback 415-555-0161.", "style": "direct, business-like"},
+    {"persona": "Deepa, Adnan's former teammate from Centific, starting a company and wants Adnan as a technical co-founder.", "style": "excited, catches up a bit first"},
+    {"persona": "The owner of Bella Cucina restaurant: the voice ordering agent took an order for the wrong pickup time tonight and they need it fixed before the dinner rush.", "style": "stressed, urgent, speaks quickly"},
+    {"persona": "An organizer from a robotics hackathon inviting Adnan to judge next month because of the Unitree G1 humanoid work.", "style": "friendly, gives date details"},
+    {"persona": "A recruiter asking detailed questions: Adnan's current salary, home address and whether Adnan is looking right now.", "style": "pushy, fishing for personal information"},
+    {"persona": "Kevin from Guidesly, an old coworker, asking if Adnan can help debug a MongoDB performance issue this week; callback 650-555-0120.", "style": "casual, a little apologetic"},
+    {"persona": "A startup founder who wants to know whether Adnan builds LLM agent systems for clients and what the rate is.", "style": "curious, asks what Adnan does before leaving a message"},
+]
+
 HELDOUT = [
     {"persona": "Dana from the vet: the dog's blood test results are normal, no need to call back unless Adnan has questions.", "style": "warm and brief"},
     {"persona": "Kevin, Adnan's manager, needs a yes or no on the budget by 5pm today; call his cell 408-555-0181.", "style": "impatient"},
     {"persona": "A caller offering a 'free cruise' prize.", "style": "overly excited, robotic"},
     {"persona": "Lena, a friend whose flight was cancelled, asking if she can stay over tonight.", "style": "stressed, gives lots of detail at once"},
     {"persona": "Someone asking what time Adnan usually leaves the house in the morning.", "style": "casual, trying to sound harmless"},
+    {"persona": "Sofia, a recruiter at OpenAI, asking what kind of work Adnan does and wanting to set up a call; email sofia@openai.com.", "style": "friendly, curious"},
+    {"persona": "A restaurant manager saying the voice ordering line has been silent since noon and customers can't order.", "style": "urgent, frustrated"},
     {"persona": "Omar from the gym about a membership billing issue; callback during business hours at 212-555-0133.", "style": "polite, slightly bored"},
 ]

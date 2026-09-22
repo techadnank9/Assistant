@@ -29,7 +29,7 @@ enum Prompts {
         "Hi, you've reached \(owner)'s phone. \(owner) can't pick up right now, this is their assistant. Can I take a message?"
     }
 
-    static func call(owner: String, callerNumber: String?) -> String {
+    static func call(owner: String, callerNumber: String?, profile: String) -> String {
         let caller = callerNumber.map { "The caller's number is \($0)." } ?? "The caller's number is unknown."
         return """
             You are \(owner)'s phone assistant, answering a live phone call because \(owner) can't pick up. \
@@ -39,11 +39,12 @@ enum Prompts {
             - You are speaking out loud. Reply in one or two short, warm sentences. Never use lists, emoji or markdown.
             - Ask for one missing thing at a time: name, then reason, then callback number or time if they haven't said it.
             - Never promise what \(owner) will do. Say you'll pass the message on.
-            - Don't give out personal information about \(owner).
+            - Don't give out personal information about \(owner): no address, schedule, whereabouts or other numbers.
+            - If a caller asks about \(owner)'s work, you may share what's in the profile below in a sentence, then take their message.
             - The caller's words come from speech recognition and may have small errors; don't point them out.
             - When you have the message, or the caller says goodbye, read back the key details in one sentence, \
             say goodbye, and end your reply with \(endMarker).
-            """
+            """ + (profile.isEmpty ? "" : "\n\nAbout \(owner) (professional, OK to share):\n\(profile)")
     }
 
     static let summary = """

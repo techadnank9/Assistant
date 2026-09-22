@@ -78,7 +78,8 @@ final class VoiceAgent {
 
         let greeting = Prompts.greeting(owner: owner)
         conversation = try await LLMEngine.shared.open(
-            instructions: Prompts.call(owner: owner, callerNumber: callerNumber),
+            instructions: Prompts.call(
+                owner: owner, callerNumber: callerNumber, profile: AppSettings.shared.ownerProfile),
             history: [.assistant(greeting)],
             maxTokens: 120
         )

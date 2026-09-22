@@ -47,10 +47,11 @@ struct RootView: View {
             if !setup.checked {
                 // Brief launch check; matches the orb screen so there's no flash.
                 Color(hex: 0x07080D).ignoresSafeArea()
-            } else if setupDone || setup.isReady && !setupShownThisLaunch {
+            } else if setupDone || setup.isReady && !needsProfilePrompt && !setupShownThisLaunch {
                 tabs
             } else {
                 SetupView(setup: setup) {
+                    AppSettings.shared.profilePromptSeen = true
                     talkNow = true
                     setupDone = true
                     Task { await chat.loadModel() }
@@ -59,6 +60,11 @@ struct RootView: View {
             }
         }
         .task { await setup.check() }
+    }
+
+    /// No profile yet: show the setup screen once so "About you" isn't missed.
+    private var needsProfilePrompt: Bool {
+        AppSettings.shared.ownerProfile.isEmpty && !AppSettings.shared.profilePromptSeen
     }
 
     /// Once the setup screen has appeared, keep it until the user taps Start talking.

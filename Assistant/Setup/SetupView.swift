@@ -4,6 +4,8 @@ import SwiftUI
 struct SetupView: View {
     @Bindable var setup: SetupModel
     let onDone: () -> Void
+    @State private var settings = AppSettings.shared
+    @State private var editingProfile = false
 
     var body: some View {
         ScrollView {
@@ -45,6 +47,11 @@ struct SetupView: View {
                             setup.startDownloads()
                         }
                     }
+                    StepRow(icon: "person.text.rectangle", title: "About you",
+                            detail: "So your assistant can tell callers what you do, instead of guessing.",
+                            step: settings.ownerProfile.isEmpty ? .waiting : .done, buttonTitle: "Add") {
+                        editingProfile = true
+                    }
                     StepRow(icon: "bell.fill", title: "Notifications",
                             detail: "Optional. Get a summary after each call.",
                             step: setup.notifications, buttonTitle: "Allow") {
@@ -72,6 +79,7 @@ struct SetupView: View {
         .background(Color(hex: 0x07080D).ignoresSafeArea())
         .environment(\.colorScheme, .dark)
         .task { setup.startDownloads() }
+        .sheet(isPresented: $editingProfile) { ProfileEditor(settings: settings) }
     }
 
 }
@@ -152,8 +160,38 @@ private struct StepRow: View {
         case .failed:
             actionButton(buttonTitle)
         case .waiting:
-            // Downloads start by themselves; only permissions wait for a tap.
-            if buttonTitle == "Allow" { actionButton(buttonTitle) } else { ProgressView().tint(.white) }
+            // Downloads start by themselves; permissions and the profile wait for a tap.
+            if buttonTitle != "Try again" { actionButton(buttonTitle) } else { ProgressView().tint(.white) }
+        }
+    }
+}
+
+/// Your name and a few lines about your work, used by every prompt.
+struct ProfileEditor: View {
+    @Bindable var settings: AppSettings
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Your name") {
+                    TextField("Name", text: $settings.ownerName)
+                }
+                Section {
+                    TextField("e.g. AI engineer in San Francisco. Building voice agents. Previously team lead at Centific.",
+                              text: $settings.ownerProfile, axis: .vertical)
+                        .lineLimit(5...12)
+                } header: {
+                    Text("What you do")
+                } footer: {
+                    Text("Your assistant shares only this with callers who ask, and never your address, schedule or whereabouts.")
+                }
+            }
+            .navigationTitle("About you")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                Button("Done") { dismiss() }
+            }
         }
     }
 }

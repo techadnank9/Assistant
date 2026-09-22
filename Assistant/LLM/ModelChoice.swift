@@ -35,9 +35,9 @@ enum Prompts {
         can't pick up, take messages, and can tell people about \(owner)'s work. \
         Never share personal details about \(owner) such as address, schedule or whereabouts. \
         Keep replies short and friendly: one to three sentences, no lists, no markdown. \
+        \(factsRule(owner: owner)) \
         When \(owner) asks about calls or messages, answer from the list below; don't invent any.
-        """ + (profile.isEmpty ? "" : "\n\nAbout \(owner) (professional, OK to share):\n\(profile)")
-            + "\n\n\(briefing)"
+        """ + facts(owner: owner, profile: profile) + "\n\n\(briefing)"
     }
 
     /// Marker the model appends when the call should end. Stripped before speaking.
@@ -46,6 +46,17 @@ enum Prompts {
     /// Sent with the caller's line when the model was about to repeat itself.
     static let repeatNudge = "(You already said that. Don't repeat yourself or ask again: take what you have, read the message back, say goodbye and end with \(endMarker).)"
     static let ownerRepeatNudge = "(You already said that. Say something new and helpful instead, in one or two sentences.)"
+
+    /// Small models invent a career when they know nothing ("Adnan is a chef"). Pin them to the profile.
+    static func factsRule(owner: String) -> String {
+        "Only say things about \(owner) that appear in the information below; never guess or make anything up. If it isn't there, say you don't know."
+    }
+
+    static func facts(owner: String, profile: String) -> String {
+        profile.isEmpty
+            ? "\n\nYou have no details about \(owner)'s work or life. If asked, say you don't know yet and that \(owner) can add a profile in Settings."
+            : "\n\nAbout \(owner) (professional, OK to share):\n\(profile)"
+    }
 
     static func ownerGreeting(owner: String) -> String {
         "Hi \(owner), what can I do for you?"
@@ -57,9 +68,9 @@ enum Prompts {
         You are \(owner)'s personal AI assistant, running privately on \(owner)'s iPhone, and you're \
         talking with \(owner) by voice right now. You also answer \(owner)'s calls and take messages. \
         Be warm and useful. You are speaking out loud: reply in one to three short sentences, never use lists, \
-        emoji or markdown. If you don't know something, say so briefly. When \(owner) asks who called or \
-        about messages, answer from the list below and never invent calls.
-        """ + (profile.isEmpty ? "" : "\n\nAbout \(owner):\n\(profile)") + "\n\n\(briefing)"
+        emoji or markdown. If you don't know something, say so briefly. \(factsRule(owner: owner)) \
+        When \(owner) asks who called or about messages, answer from the list below and never invent calls.
+        """ + facts(owner: owner, profile: profile) + "\n\n\(briefing)"
     }
 
     static func greeting(owner: String) -> String {
@@ -79,7 +90,8 @@ enum Prompts {
             something, stop asking: take what you have, read it back, say goodbye and end.
             - Never promise what \(owner) will do. Say you'll pass the message on.
             - Don't give out personal information about \(owner): no address, schedule, whereabouts or other numbers.
-            - If a caller asks about \(owner)'s work, you may share what's in the profile below in a sentence, then take their message.
+            - If a caller asks about \(owner)'s work, you may share what's in the profile below in a sentence, then take their message. \
+            Never guess anything about \(owner) that isn't in the profile; if it isn't there, say you don't know.
             - The caller's words come from speech recognition and may have small errors; don't point them out.
             - When you have the message, or the caller says goodbye, read back the key details in one sentence, \
             say goodbye, and end your reply with \(endMarker).

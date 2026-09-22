@@ -24,6 +24,8 @@ final class AppSettings {
     /// Use the downloaded neural voice (Kokoro) instead of Apple's voices.
     var naturalVoice: Bool { didSet { save("naturalVoice", naturalVoice) } }
     var kokoroVoice: String { didSet { save("kokoroVoice", kokoroVoice) } }
+    /// Set once the setup screen has offered the "About you" step, so it isn't forced again.
+    var profilePromptSeen: Bool { didSet { save("profilePromptSeen", profilePromptSeen) } }
 
     var model: ModelOption {
         ModelOption.presets.first { $0.id == modelID } ?? ModelOption(id: modelID, label: modelID)
@@ -41,6 +43,7 @@ final class AppSettings {
         voiceID = d.string(forKey: "voiceID") ?? ""
         naturalVoice = d.object(forKey: "naturalVoice") as? Bool ?? true
         kokoroVoice = d.string(forKey: "kokoroVoice") ?? "af_heart"
+        profilePromptSeen = d.bool(forKey: "profilePromptSeen")
     }
 
     private static var bundledProfile: String {

@@ -6,3 +6,8 @@ xcuserdata/
 
 __pycache__/
 *.profraw
+
+# Twilio account config baked into the build (public repo)
+Assistant/Resources/TwilioConfig.plist
+twilio/.env*
+twilio/certs/

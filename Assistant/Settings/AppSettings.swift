@@ -37,8 +37,9 @@ final class AppSettings {
         // The built-in profile, unless the owner has written their own.
         let stored = d.string(forKey: "ownerProfile") ?? ""
         ownerProfile = stored.isEmpty ? Self.bundledProfile : stored
-        twilioBaseURL = d.string(forKey: "twilioBaseURL") ?? ""
-        twilioSecret = d.string(forKey: "twilioSecret") ?? ""
+        // Falls back to TwilioConfig.plist, so a build comes ready to take calls with nothing to type.
+        twilioBaseURL = Self.nonEmpty(d.string(forKey: "twilioBaseURL")) ?? Self.bundledTwilio("BaseURL")
+        twilioSecret = Self.nonEmpty(d.string(forKey: "twilioSecret")) ?? Self.bundledTwilio("Secret")
         listenIn = d.object(forKey: "listenIn") as? Bool ?? true
         modelID = d.string(forKey: "modelID") ?? ModelOption.default.id
         orbMode = d.string(forKey: "orbMode") ?? "owner"
@@ -46,6 +47,20 @@ final class AppSettings {
         naturalVoice = d.object(forKey: "naturalVoice") as? Bool ?? true
         kokoroVoice = d.string(forKey: "kokoroVoice") ?? "af_heart"
         profilePromptSeen = d.bool(forKey: "profilePromptSeen")
+    }
+
+    private static func nonEmpty(_ value: String?) -> String? {
+        let value = value?.trimmingCharacters(in: .whitespaces) ?? ""
+        return value.isEmpty ? nil : value
+    }
+
+    /// The Twilio account this build was made for (TwilioConfig.plist, kept out of the public repo).
+    private static func bundledTwilio(_ key: String) -> String {
+        guard let url = Bundle.main.url(forResource: "TwilioConfig", withExtension: "plist"),
+              let data = try? Data(contentsOf: url),
+              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: String]
+        else { return "" }
+        return plist[key] ?? ""
     }
 
     private static var bundledProfile: String {

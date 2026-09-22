@@ -38,8 +38,22 @@ actor NaturalVoice {
 
     var isLoaded: Bool { model != nil }
 
-    /// Downloaded and ready to load (no network needed).
-    static var isDownloaded: Bool { ModelFiles.localDirectory(for: repo) != nil }
+    /// The engine (shared by every voice) and one 0.5 MB voice file.
+    static let engineFiles = ["config.json", "kokoro-v1_0.safetensors"]
+    static func voiceFile(_ voice: String) -> String { "voices/\(voice).safetensors" }
+
+    /// Ready to speak with the chosen voice, without needing the network.
+    @MainActor static var isDownloaded: Bool {
+        let voice = AppSettings.shared.kokoroVoice
+        return ModelFiles.localDirectory(for: repo, requiring: engineFiles + [voiceFile(voice)]) != nil
+            || ModelFiles.localDirectory(for: repo, requiring: engineFiles) != nil && hasHubVoices
+    }
+
+    /// Older Hugging Face cache downloads keep every voice together.
+    private static var hasHubVoices: Bool {
+        guard let dir = ModelFiles.localDirectory(for: repo, requiring: engineFiles) else { return false }
+        return FileManager.default.fileExists(atPath: dir.appendingPathComponent("voices").path)
+    }
 
     /// Downloads (first time) and loads the voice model. Concurrent callers share one load.
     @discardableResult
@@ -50,12 +64,16 @@ actor NaturalVoice {
             let start = Date.now
             Log.info(.audio, "Loading natural voice (Kokoro)")
             // All voices come in one download that continues in the background if the app closes.
+            // The engine is 327 MB and each voice is only 0.5 MB, so download the engine plus the
+            // chosen voice; other voices are fetched in a moment when they're picked.
+            let voice = await MainActor.run { AppSettings.shared.kokoroVoice }
+            let wanted = Set(Self.engineFiles + [Self.voiceFile(voice)])
             let directory: URL
-            if let local = ModelFiles.localDirectory(for: Self.repo) {
+            if let local = ModelFiles.localDirectory(for: Self.repo, requiring: Array(wanted)) {
                 directory = local
             } else {
                 directory = try await BackgroundDownloads.shared.ensure(
-                    repo: Self.repo, include: { ModelFiles.isModelFile($0) }, progress: progress)
+                    repo: Self.repo, include: { wanted.contains($0) }, progress: progress)
             }
             let processor = MisakiTextProcessor()
             try await processor.prepare()   // pronunciation data, ~9 MB
@@ -75,9 +93,20 @@ actor NaturalVoice {
         }
     }
 
+    /// Downloads a voice file (0.5 MB) if this is the first time it's used.
+    private func ensureVoice(_ voice: String) async throws {
+        guard !BackgroundDownloads.hasFiles(Self.repo, [Self.voiceFile(voice)]),
+              ModelFiles.localDirectory(for: Self.repo, requiring: [Self.voiceFile(voice)]) == nil
+        else { return }
+        Log.info(.audio, "Fetching voice \(voice)")
+        _ = try await BackgroundDownloads.shared.ensure(
+            repo: Self.repo, include: { $0 == Self.voiceFile(voice) })
+    }
+
     /// Renders one sentence to a WAV file in memory.
     func synthesize(_ text: String, voice: String) async throws -> Data {
         let model = try await load()
+        try await ensureVoice(voice)
         let start = Date.now
         let audio = try await model.generate(
             text: text, voice: voice, refAudio: nil, refText: nil, language: nil,

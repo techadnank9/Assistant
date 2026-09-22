@@ -54,13 +54,10 @@ final class BackgroundDownloads: NSObject, URLSessionDownloadDelegate, @unchecke
         root.appendingPathComponent(repo.replacingOccurrences(of: "/", with: "--"), isDirectory: true)
     }
 
-    private static func marker(for repo: String) -> URL {
-        directory(for: repo).appendingPathComponent(".complete")
-    }
-
-    /// The local folder if the whole repo is already downloaded.
-    static func completeDirectory(for repo: String) -> URL? {
-        FileManager.default.fileExists(atPath: marker(for: repo).path) ? directory(for: repo) : nil
+    /// True when every one of `paths` is already on disk (files only appear once fully downloaded).
+    static func hasFiles(_ repo: String, _ paths: [String]) -> Bool {
+        let dir = directory(for: repo)
+        return paths.allSatisfy { FileManager.default.fileExists(atPath: dir.appendingPathComponent($0).path) }
     }
 
     static func delete(_ repo: String) {
@@ -81,8 +78,6 @@ final class BackgroundDownloads: NSObject, URLSessionDownloadDelegate, @unchecke
         include: @escaping @Sendable (String) -> Bool,
         progress: @escaping @Sendable (Double) -> Void = { _ in }
     ) async throws -> URL {
-        if let done = Self.completeDirectory(for: repo) { return done }
-
         let files = try await listFiles(repo).filter { $0.type == "file" && include($0.path) }
         guard !files.isEmpty else { throw DownloadError.emptyRepo(repo) }
         let dir = Self.directory(for: repo)
@@ -125,7 +120,6 @@ final class BackgroundDownloads: NSObject, URLSessionDownloadDelegate, @unchecke
             }
         }
 
-        FileManager.default.createFile(atPath: Self.marker(for: repo).path, contents: Data())
         progress(1)
         Log.info(.model, "Downloaded \(repo)")
         return dir

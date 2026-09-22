@@ -48,9 +48,14 @@ enum ModelFiles {
         return [".safetensors", ".json", ".jinja", ".txt", ".model", ".tiktoken"].contains { lower.hasSuffix($0) }
     }
 
-    /// A local folder holding the whole model: a background download, or an older Hugging Face cache snapshot.
-    static func localDirectory(for id: String) -> URL? {
-        if let done = BackgroundDownloads.completeDirectory(for: id) { return done }
+    /// A local folder holding the model: a background download, or an older Hugging Face cache snapshot.
+    /// Files only appear once fully downloaded, so their presence means they're usable.
+    static func localDirectory(for id: String, requiring paths: [String] = ["config.json", "tokenizer.json"]) -> URL? {
+        if BackgroundDownloads.hasFiles(id, paths),
+           let files = try? FileManager.default.contentsOfDirectory(atPath: BackgroundDownloads.directory(for: id).path),
+           files.contains(where: { $0.hasSuffix(".safetensors") }) {
+            return BackgroundDownloads.directory(for: id)
+        }
         let snapshots = folders(for: id)[0].appendingPathComponent("snapshots")
         let names = (try? FileManager.default.contentsOfDirectory(atPath: snapshots.path)) ?? []
         for name in names {

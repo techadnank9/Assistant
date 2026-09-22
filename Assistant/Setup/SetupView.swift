@@ -42,7 +42,7 @@ struct SetupView: View {
                     }
                     if setup.offersNaturalVoice {
                         StepRow(icon: "person.wave.2.fill", title: "Natural voice",
-                                detail: "Optional. A human-sounding voice, on the iPhone.",
+                                detail: "Optional. A human-sounding voice that runs on the iPhone.",
                                 step: setup.voice, buttonTitle: "Try again") {
                             setup.startDownloads()
                         }

@@ -127,11 +127,11 @@ final class SetupModel {
     }
 
     private func downloadVoice() async {
-        voice = .working("All 7 voices, about 330 MB. Keeps downloading if you leave the app.", 0)
+        voice = .working("About 328 MB, once. Keeps downloading if you leave the app.", 0)
         do {
             try await NaturalVoice.shared.load { fraction in
                 Task { @MainActor [weak self] in
-                    self?.voice = .working("All 7 voices, about 330 MB. Keeps downloading if you leave the app.", fraction)
+                    self?.voice = .working("About 328 MB, once. Keeps downloading if you leave the app.", fraction)
                 }
             }
             voice = .done

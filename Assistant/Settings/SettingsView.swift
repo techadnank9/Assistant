@@ -296,7 +296,7 @@ private struct VoiceSection: View {
                     } else if downloading {
                         ProgressView()
                     } else {
-                        Button("All 7 voices · about 330 MB") { download() }
+                        Button("Download voice · about 328 MB") { download() }
                     }
                 }
                 if let failure {

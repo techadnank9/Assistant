@@ -8,6 +8,7 @@ struct Message: Identifiable, Equatable {
     var text: String
 }
 
+/// The Chat tab: typed conversation with the same on-device model the agent uses.
 @MainActor
 @Observable
 final class ChatModel {
@@ -22,16 +23,18 @@ final class ChatModel {
     private(set) var status: Status = .loading(0)
     private(set) var tokensPerSecond: Double?
 
-    let engine = LLMEngine()
+    private var conversation: UUID?
     private var generation: Task<Void, Never>?
 
     var canSend: Bool { status == .ready }
 
     func loadModel() async {
+        status = .loading(0)
         do {
-            try await engine.load { fraction in
+            try await LLMEngine.shared.load(AppSettings.shared.model) { fraction in
                 Task { @MainActor in self.status = .loading(fraction) }
             }
+            conversation = try await LLMEngine.shared.open(instructions: Prompts.chat, maxTokens: 512)
             status = .ready
         } catch {
             status = .failed(error.localizedDescription)
@@ -40,7 +43,7 @@ final class ChatModel {
 
     func send(_ text: String) {
         let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard canSend, !prompt.isEmpty else { return }
+        guard canSend, !prompt.isEmpty, let conversation else { return }
 
         messages.append(Message(role: .user, text: prompt))
         let reply = Message(role: .assistant, text: "")
@@ -52,10 +55,10 @@ final class ChatModel {
             var chunks = 0
             var raw = ""
             do {
-                for try await chunk in try await engine.respond(to: prompt) {
+                for try await chunk in try await LLMEngine.shared.respond(in: conversation, to: prompt) {
                     raw += chunk
                     chunks += 1
-                    update(reply.id, Self.visibleText(raw))
+                    update(reply.id, ModelText.visible(raw))
                 }
                 let elapsed = Date.now.timeIntervalSince(start)
                 if elapsed > 0 { tokensPerSecond = Double(chunks) / elapsed }
@@ -81,19 +84,9 @@ final class ChatModel {
         stop()
         messages.removeAll()
         tokensPerSecond = nil
-        Task { await engine.reset() }
-    }
-
-    /// Qwen3 can still emit an empty think block with thinking disabled; hide it.
-    private static func visibleText(_ raw: String) -> String {
-        var text = raw
-        if let range = text.range(of: "<think>") {
-            if let end = text.range(of: "</think>", range: range.upperBound..<text.endIndex) {
-                text.removeSubrange(range.lowerBound..<end.upperBound)
-            } else {
-                text.removeSubrange(range.lowerBound..<text.endIndex)
-            }
+        Task {
+            if let conversation { await LLMEngine.shared.close(conversation) }
+            conversation = try? await LLMEngine.shared.open(instructions: Prompts.chat, maxTokens: 512)
         }
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

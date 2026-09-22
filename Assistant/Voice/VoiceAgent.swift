@@ -1,0 +1,193 @@
+@preconcurrency import AVFoundation
+import MLXLMCommon
+import Observation
+
+struct Turn: Identifiable, Codable, Hashable {
+    enum Speaker: String, Codable { case caller, agent }
+    var id = UUID()
+    let speaker: Speaker
+    var text: String
+}
+
+/// The voice loop: listen → Qwen → speak, until the message is taken.
+/// Runs the same way over the phone's mic (Talk tab) and over a live call.
+@MainActor
+@Observable
+final class VoiceAgent {
+    enum Phase: Equatable { case starting, listening, thinking, speaking, ended }
+
+    private(set) var phase: Phase = .starting
+    private(set) var turns: [Turn] = []
+    private(set) var caption = ""
+    private(set) var error: String?
+    let startedAt = Date.now
+
+    private let io: AudioIO
+    private let owner: String
+    private let callerNumber: String?
+    private let listener = Listener()
+    private let speaker = Speaker()
+    private var conversation: UUID?
+    private var hungUp = false
+    private var listening: Task<String?, Never>?
+
+    /// Longest a call may run before the agent wraps up.
+    private let maxDuration: TimeInterval = 240
+
+    init(io: AudioIO, owner: String, callerNumber: String?) {
+        self.io = io
+        self.owner = owner
+        self.callerNumber = callerNumber
+    }
+
+    /// Runs the whole conversation and returns the transcript.
+    func run() async -> [Turn] {
+        do {
+            try await start()
+            try await converse()
+        } catch is CancellationError {
+        } catch {
+            self.error = error.localizedDescription
+        }
+        await finish()
+        return turns
+    }
+
+    /// Ends the conversation from outside, e.g. the caller hung up.
+    func hangUp() {
+        guard !hungUp else { return }
+        hungUp = true
+        listening?.cancel()
+        // Drops any queued speech so the agent goes quiet immediately.
+        io.stop()
+    }
+
+    private func start() async throws {
+        try await LLMEngine.shared.load(AppSettings.shared.model)
+        try await listener.prepare()
+        try await io.start()
+
+        // Only feed the recognizer while listening, so the agent never transcribes itself.
+        let listener = listener
+        Task { [weak self, io] in
+            for await buffer in io.incoming {
+                guard let self, self.phase == .listening else { continue }
+                await listener.feed(buffer)
+            }
+        }
+
+        let greeting = Prompts.greeting(owner: owner)
+        conversation = try await LLMEngine.shared.open(
+            instructions: Prompts.call(owner: owner, callerNumber: callerNumber),
+            history: [.assistant(greeting)],
+            maxTokens: 120
+        )
+        try await say(greeting)
+    }
+
+    private func converse() async throws {
+        var silentTurns = 0
+        while !hungUp, !Task.isCancelled {
+            phase = .listening
+            let captions = Task { [listener] in
+                while !Task.isCancelled {
+                    self.caption = await listener.partial
+                    try? await Task.sleep(for: .milliseconds(150))
+                }
+            }
+            let listen = Task { [listener] in await listener.nextUtterance() }
+            listening = listen
+            let heard = await listen.value
+            captions.cancel()
+            caption = ""
+            if hungUp { return }
+
+            guard let heard else {
+                silentTurns += 1
+                if silentTurns >= 2 {
+                    try await say("I didn't catch anything, so I'll let you go. Goodbye!")
+                    return
+                }
+                try await say("Sorry, are you still there?")
+                continue
+            }
+            silentTurns = 0
+            turns.append(Turn(speaker: .caller, text: heard))
+
+            let overtime = Date.now.timeIntervalSince(startedAt) > maxDuration
+            let prompt = overtime
+                ? heard + "\n\n(We're out of time. Read back the message and say goodbye now.)"
+                : heard
+            let reply = try await think(and: prompt)
+            if reply.contains(Prompts.endMarker) || overtime { return }
+        }
+    }
+
+    /// Streams Qwen's reply and speaks it sentence by sentence as it arrives.
+    private func think(and prompt: String) async throws -> String {
+        guard let conversation else { return "" }
+        phase = .thinking
+        var raw = ""
+        var spoken = 0
+        let index = turns.count
+        turns.append(Turn(speaker: .agent, text: ""))
+
+        for try await chunk in try await LLMEngine.shared.respond(in: conversation, to: prompt) {
+            if hungUp { break }
+            raw += chunk
+            let visible = ModelText.visible(raw).replacingOccurrences(of: Prompts.endMarker, with: "")
+            turns[index].text = visible.trimmingCharacters(in: .whitespaces)
+            // Speak each complete sentence as soon as it exists.
+            while let end = Self.sentenceEnd(in: visible, from: spoken) {
+                let sentence = String(visible[visible.index(visible.startIndex, offsetBy: spoken)..<end])
+                spoken = visible.distance(from: visible.startIndex, to: end)
+                await queue(sentence)
+            }
+        }
+        let visible = turns[index].text
+        if spoken < visible.count {
+            await queue(String(visible.dropFirst(spoken)))
+        }
+        await io.waitUntilPlayed()
+        return raw
+    }
+
+    private func say(_ text: String) async throws {
+        turns.append(Turn(speaker: .agent, text: text))
+        await queue(text)
+        await io.waitUntilPlayed()
+    }
+
+    private func queue(_ text: String) async {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !hungUp else { return }
+        for buffer in await speaker.render(text, to: io.playbackFormat) {
+            io.play(buffer)
+        }
+        phase = .speaking
+    }
+
+    private func finish() async {
+        phase = .ended
+        if let conversation { await LLMEngine.shared.close(conversation) }
+        await listener.finish()
+        io.stop()
+        turns.removeAll { $0.text.isEmpty }
+    }
+
+    /// End of the first full sentence at or after `offset`, if one has finished.
+    private static func sentenceEnd(in text: String, from offset: Int) -> String.Index? {
+        guard offset < text.count else { return nil }
+        let start = text.index(text.startIndex, offsetBy: offset)
+        var index = start
+        while index < text.endIndex {
+            let next = text.index(after: index)
+            // A terminator followed by a space; the stream hasn't settled on anything later.
+            if ".!?".contains(text[index]), next < text.endIndex, text[next] == " " {
+                return next
+            }
+            index = next
+        }
+        return nil
+    }
+}

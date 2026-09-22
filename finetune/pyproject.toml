@@ -1,0 +1,9 @@
+[project]
+name = "assistant-finetune"
+version = "0.1.0"
+description = "Fine-tune the Assistant's on-device Qwen3 with MLX-LM"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "mlx-lm>=0.28",
+    "huggingface_hub[cli]>=0.34",
+]

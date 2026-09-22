@@ -26,7 +26,7 @@ struct ChatView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) { inputBar }
-            .navigationTitle("Assistant")
+            .navigationTitle("Chat")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { statusLabel }
@@ -67,7 +67,7 @@ struct ChatView: View {
                 .foregroundStyle(.tint)
             switch chat.status {
             case .loading(let fraction):
-                Text("Loading Qwen3 on this iPhone")
+                Text("Loading the model on this iPhone")
                     .font(.headline)
                 ProgressView(value: fraction)
                     .frame(maxWidth: 220)
@@ -80,8 +80,8 @@ struct ChatView: View {
                 Button("Try again") { Task { await chat.loadModel() } }
                     .buttonStyle(.bordered)
             default:
-                Text("Qwen3 is running on device").font(.headline)
-                Text("Pretend you're a caller and say hello.")
+                Text("Running on this iPhone").font(.headline)
+                Text("Chat with the model the phone agent uses.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

@@ -91,8 +91,25 @@ if (number) {
   console.log('… No phone number on the account. Re-run with --buy to buy one.');
 }
 
+// Bake the account into the build, so there's nothing to type in the app. Gitignored: the repo is public.
+const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+\t<key>BaseURL</key>
+\t<string>${env.FUNCTIONS_URL}</string>
+\t<key>Secret</key>
+\t<string>${env.APP_SECRET}</string>
+</dict>
+</plist>
+`;
+const configPath = new URL('../Assistant/Resources/TwilioConfig.plist', import.meta.url);
+writeFileSync(configPath, plist);
+console.log('✓ Wrote Assistant/Resources/TwilioConfig.plist — rebuild and the app registers on its own');
+
 console.log(`
-In the app, Settings → Phone number:
+Nothing to type in the app. To point a build at another account by hand,
+Settings → Phone number:
   URL     ${env.FUNCTIONS_URL}
   Secret  ${env.APP_SECRET}
 `);

@@ -50,26 +50,105 @@ puts them together into an agent that picks up for you:
 | ⚙️ **Model & voice settings** | Download, re-download or delete the model, see what's on the phone, and pick or preview the voice. |
 | 🧪 **Fine-tuning** | Train your own version on a Mac with MLX-LM and swap it in. |
 
-## How it works
+## Architecture
+
+The number you give out lives in Twilio. The intelligence lives in your pocket. Everything below the dotted
+line runs on the iPhone, offline, with no API key and no per-token cost.
 
 ```mermaid
-flowchart LR
-    Caller((Caller)) -->|phone network| Twilio[Twilio number]
-    Twilio -->|VoIP push| CallKit[CallKit ring]
-    CallKit -->|you tap Answer| Audio[Call audio]
-    subgraph iPhone [Everything below runs on the iPhone]
-        Audio --> STT[SpeechAnalyzer<br/>speech → text]
-        STT --> LLM[Qwen3 1.7B on MLX<br/>decides what to say]
-        LLM --> TTS[AVSpeechSynthesizer<br/>text → voice]
+flowchart TB
+    Caller((Caller)) -->|"PSTN"| Twilio[Twilio number<br/>+1 805 …]
+    Twilio -->|"webhook"| Fn["/incoming Function<br/>&lt;Dial&gt;&lt;Client&gt;owner"]
+    Fn -->|"VoIP push via APNs"| Push[PushKit wakes the app<br/>even if it was killed]
+    Push --> CK[CallKit rings<br/>auto-answers after 4s]
+    CK -->|"WebRTC media"| Audio[CallAudioDevice<br/>mic + speaker of the call]
+    subgraph iPhone ["── on the iPhone, no network ──"]
+        Audio --> STT["SpeechAnalyzer<br/>speech → text"]
+        STT --> LLM["Qwen3-1.7B, 4-bit, MLX<br/>decides what to say"]
+        LLM --> TTS["Kokoro-82M, MLX<br/>text → voice"]
         TTS --> Audio
-        LLM --> Summary[Summary + notification]
+        LLM --> Save["SwiftData message<br/>+ summary + notification"]
     end
 ```
 
-1. **Listen.** On-device `SpeechAnalyzer` transcribes the caller. The turn ends when the words stop changing.
-2. **Think.** Qwen3-1.7B (4-bit, MLX) replies in one or two spoken sentences, asking for one missing detail at a time.
-3. **Speak.** Each finished sentence goes straight to speech and into the call.
-4. **Wrap up.** When it has the message, it reads it back, says goodbye and hangs up. Then it summarizes the call and notifies you.
+### The call path, step by step
+
+1. **Someone dials your number.** Twilio receives it and asks its webhook what to do. The webhook is a Twilio
+   Function that returns nine lines of TwiML: `<Dial><Client>owner</Client></Dial>`. "owner" is your iPhone.
+2. **Twilio sends a VoIP push** through Apple's push service, signed with a VoIP certificate for the app's bundle
+   ID. This is the only way to wake an iOS app that isn't running — and it works even if the app was swiped away.
+3. **PushKit hands it to CallKit**, which rings the phone like a real call, lock screen and all. iOS requires the
+   app to report a call for *every* VoIP push, so there is no silent wake-up here by design.
+4. **The app answers itself** after a few seconds of ringing (`CXAnswerCallAction`), unless you grab it first.
+   Those seconds are deliberate: it's your phone, and you get first refusal.
+5. **Audio connects over WebRTC.** `CallAudioDevice` is the bridge — Twilio hands it the caller's microphone
+   frames and takes back whatever the assistant says.
+6. **From here nothing leaves the phone.** The loop below runs until the message is taken.
+
+### The loop on the device
+
+```
+caller speaks → SpeechAnalyzer → Qwen3 → Kokoro → caller hears it
+                     ▲                                    │
+                     └──────────── repeat ────────────────┘
+```
+
+| Stage | What runs | Where |
+|---|---|---|
+| Hearing | Apple `SpeechAnalyzer`, `DictationTranscriber` fallback | on-device, Apple's models |
+| Turn-taking | silence timer, 1.3–2.8 s depending on how the sentence ends | on-device |
+| Thinking | Qwen3-1.7B 4-bit via MLX Swift, streaming | on-device, Metal (CPU when backgrounded) |
+| Speaking | Kokoro-82M via MLX, Apple voices as fallback | on-device |
+| Afterwards | SwiftData record, Qwen-written summary, local notification | on-device |
+
+**Turn-taking** is the part that decides whether it feels human. The app doesn't cut in the moment you stop
+making noise: it waits longer when a sentence ends on a word that implies more is coming ("and", "but", "my
+number is"), and less when it ends cleanly. Replies are spoken as one continuous take rather than sentence
+fragments, because chopped playback is what makes assistants sound robotic.
+
+**Thinking is streamed.** The model starts producing words before it has finished the sentence, so the first
+audio begins while the rest is still being generated. A reply lands in about a second or two on an A17/M-class
+chip — the beat a person takes before answering, not a machine hanging.
+
+**Repeats are caught before they're spoken.** If a reply opens with the same sentence as an earlier one, it's
+discarded, the conversation is rebuilt without it, and the model is nudged forward. That one guard cut repeated
+replies from 15.6% to 2.1%.
+
+### What's local and what isn't
+
+| | Needs the network |
+|---|---|
+| Speech recognition, the model, the voice, the transcript, the summary | **No** — ever |
+| The call arriving at all (push + media) | **Yes** — Wi-Fi or cellular data |
+
+The brain is offline; the phone line isn't. The model runs on your phone, so no audio, transcript or message is
+sent to any AI service — but a call still has to travel from Twilio's data centre to your pocket, and iOS gives
+apps no way to answer your carrier's line directly.
+
+### Why these pieces
+
+- **Qwen3-1.7B, 4-bit** — about 1 GB. Big enough to hold a conversation and follow rules about what not to say;
+  small enough to answer in a second on a phone while sharing memory with speech and audio.
+- **MLX** — Apple's array framework. Unified memory means the weights aren't copied to the GPU, which is what
+  makes a 1 GB model practical on a device that's also recording and playing audio.
+- **Kokoro-82M** — a 327 MB neural voice engine plus 0.5 MB per voice, downloaded on demand. Apple's built-in
+  voices are the fallback while it downloads.
+- **CallKit + PushKit** — the only sanctioned path for an app to be in a phone call on iOS.
+- **Twilio Functions** — the webhook and the token endpoint are ~40 lines of JavaScript, so there's no server to
+  run, patch or pay for.
+
+### Where it can fail
+
+Honest list, since these are the things that actually bite:
+
+- **No data on the phone** → the push never arrives and the caller gets voicemail after 25 seconds.
+- **Background GPU** — iOS blocks Metal work in the background, so the model switches to CPU there. Slower, but
+  it keeps answering.
+- **Model not downloaded yet** → the assistant still greets the caller (the greeting needs neither model nor
+  recognizer) while the download finishes.
+- **Voice engine not downloaded** → Apple's voice is used, which sounds noticeably more synthetic.
+- **The APNs environment must match** the certificate: TestFlight builds are production, local debug builds are
+  sandbox. A mismatch means the phone never rings, silently.
 
 ## Quick start
 
@@ -98,9 +177,12 @@ open Assistant.xcodeproj
    `twilio/voip-cert.sh csr`. Then import it with `twilio/voip-cert.sh import ~/Downloads/voip_services.cer`.
 3. `cd twilio && npm install && npm run setup`. This creates the API key and push credential, deploys the token, incoming
    and voicemail Functions, and points your number at the app. Add `-- --buy` to buy a number (this costs money).
-4. In the app, open **Settings → Phone number**, paste the printed URL and secret, and tap **Register for calls**.
+4. `npm run setup` writes `Assistant/Resources/TwilioConfig.plist` (gitignored), so the build comes ready and
+   there's nothing to type. Open the app once and **Settings → Phone number** shows *Registered*. You can still
+   paste a URL and secret there by hand to point a build at a different account.
 
-If nobody answers within 25 seconds, the caller gets voicemail.
+The assistant answers on its own after a few seconds of ringing; turn that off in Settings if you'd rather tap.
+If nobody and nothing answers within 25 seconds, the caller gets voicemail.
 </details>
 
 <details>

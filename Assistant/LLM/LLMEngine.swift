@@ -18,24 +18,58 @@ actor LLMEngine {
 
     var isLoaded: Bool { container != nil }
 
+    #if targetEnvironment(simulator)
+        /// MLX can't start in the simulator (its Metal device aborts at init), so simulator builds
+        /// use scripted replies. Everything around the model — speech, voice, UI, saving — is real.
+        private var simulatorTurns: [UUID: Int] = [:]
+        private var simulatorSummaries: Set<UUID> = []
+    #endif
+
     /// Downloads the weights on first use (cached afterwards) and loads them into memory.
     func load(_ option: ModelOption, progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws {
         guard loadedModel != option.id else { return }
+        #if targetEnvironment(simulator)
+            Log.info(.model, "Simulator: using scripted replies instead of \(option.id)")
+            loadedModel = option.id
+            progress(1)
+            return
+        #endif
         conversations.removeAll()
         container = nil
         let device = await Self.device()
-        container = try await Device.withDefaultDevice(device) {
-            try await #huggingFaceLoadModelContainer(
-                configuration: option.configuration,
-                progressHandler: { progress($0.fractionCompleted) }
-            )
+        let start = Date.now
+        Log.info(.model, "Loading \(option.id) on \(device)")
+        let lastLogged = LockedValue(-1)
+        do {
+            container = try await Device.withDefaultDevice(device) {
+                try await #huggingFaceLoadModelContainer(
+                    configuration: option.configuration,
+                    progressHandler: { p in
+                        progress(p.fractionCompleted)
+                        let tenth = Int(p.fractionCompleted * 10)
+                        if lastLogged.swap(tenth) != tenth {
+                            Log.info(.model, "Download \(tenth * 10)%")
+                        }
+                    }
+                )
+            }
+        } catch {
+            Log.error(.model, "Load failed: \(error)")
+            throw error
         }
         loadedModel = option.id
+        Log.info(.model, "Loaded in \(Int(Date.now.timeIntervalSince(start)))s")
     }
 
     /// Starts a conversation and returns its handle. Pass `history` to seed turns
     /// that already happened, like a greeting spoken before the model was involved.
     func open(instructions: String, history: [Chat.Message] = [], maxTokens: Int = 256) throws -> UUID {
+        #if targetEnvironment(simulator)
+            let scripted = UUID()
+            simulatorTurns[scripted] = 0
+            if instructions == Prompts.summary { simulatorSummaries.insert(scripted) }
+            return scripted
+        #endif
         guard let container else { throw EngineError.notLoaded }
         let parameters = GenerateParameters(maxTokens: maxTokens, temperature: 0.7, topP: 0.8)
         // Qwen3 thinks out loud by default; a phone agent needs to answer right away.
@@ -50,13 +84,23 @@ actor LLMEngine {
     }
 
     func respond(in id: UUID, to prompt: String) async throws -> AsyncThrowingStream<String, Error> {
-        guard let session = conversations[id] else { throw EngineError.notLoaded }
+        #if targetEnvironment(simulator)
+            return simulatedReply(in: id, to: prompt)
+        #endif
+        guard let session = conversations[id] else {
+            Log.error(.model, "Respond called with no loaded model or unknown conversation")
+            throw EngineError.notLoaded
+        }
         let device = await Self.device()
         // Generation runs in a child task, which inherits this task-local device.
         return Device.withDefaultDevice(device) { session.streamResponse(to: prompt) }
     }
 
     func close(_ id: UUID) {
+        #if targetEnvironment(simulator)
+            simulatorTurns[id] = nil
+            simulatorSummaries.remove(id)
+        #endif
         conversations[id] = nil
     }
 
@@ -69,6 +113,35 @@ actor LLMEngine {
         return ModelText.visible(text)
     }
 
+    #if targetEnvironment(simulator)
+        private func simulatedReply(in id: UUID, to prompt: String) -> AsyncThrowingStream<String, Error> {
+            let turn = simulatorTurns[id, default: 0]
+            simulatorTurns[id] = turn + 1
+            let reply: String
+            if simulatorSummaries.contains(id) {
+                reply = "Name: Test Caller\nCallback: None\nUrgent: no\nSummary: A simulator test call; the caller said \"\(prompt.prefix(60))\"."
+            } else {
+                let script = [
+                    "Thanks. Who am I speaking with?",
+                    "Got it. And what's this about?",
+                    "Thanks. What's the best number to reach you?",
+                    "Perfect, I'll pass that on. Bye! \(Prompts.endMarker)",
+                ]
+                reply = script[min(turn, script.count - 1)]
+            }
+            let words = reply.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
+            return AsyncThrowingStream { continuation in
+                Task {
+                    for (i, word) in words.enumerated() {
+                        try? await Task.sleep(for: .milliseconds(40))
+                        continuation.yield(i == 0 ? word : " " + word)
+                    }
+                    continuation.finish()
+                }
+            }
+        }
+    #endif
+
     /// iOS refuses GPU work from background apps. A call answered from the lock screen
     /// leaves the app in the background, so fall back to the CPU there.
     @MainActor private static func device() -> Device {
@@ -78,6 +151,22 @@ actor LLMEngine {
     enum EngineError: LocalizedError {
         case notLoaded
         var errorDescription: String? { "The model isn't loaded yet." }
+    }
+}
+
+/// Tiny thread-safe box for values touched from download callbacks.
+final class LockedValue<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: T
+    init(_ value: T) { self.value = value }
+
+    /// Stores `new` and returns what was there before.
+    func swap(_ new: T) -> T {
+        lock.withLock {
+            let old = value
+            value = new
+            return old
+        }
     }
 }
 

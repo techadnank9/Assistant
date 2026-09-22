@@ -68,7 +68,9 @@ final class CallManager: NSObject {
                 }
             }
             registration = .registered
+            Log.info(.calls, "Registered with Twilio for incoming calls")
         } catch {
+            Log.error(.calls, "Twilio registration failed: \(error)")
             registration = .failed(error.localizedDescription)
         }
     }
@@ -143,6 +145,7 @@ final class CallManager: NSObject {
 
 extension CallManager: @preconcurrency PKPushRegistryDelegate {
     func pushRegistry(_ registry: PKPushRegistry, didUpdate credentials: PKPushCredentials, for type: PKPushType) {
+        Log.info(.calls, "Got VoIP push token")
         deviceToken = credentials.token
         Task { await register() }
     }
@@ -169,6 +172,7 @@ extension CallManager: @preconcurrency PKPushRegistryDelegate {
 
 extension CallManager: @preconcurrency NotificationDelegate {
     func callInviteReceived(callInvite: CallInvite) {
+        Log.info(.calls, "Incoming call from \(callInvite.from ?? "unknown")")
         reportIncoming(callInvite)
     }
 
@@ -182,17 +186,20 @@ extension CallManager: @preconcurrency NotificationDelegate {
 
 extension CallManager: @preconcurrency CallDelegate {
     func callDidConnect(call: Call) {
+        Log.info(.calls, "Call connected")
         guard let uuid = call.uuid else { return }
         runAgent(for: uuid)
     }
 
     func callDidFailToConnect(call: Call, error: Error) {
+        Log.error(.calls, "Call failed to connect: \(error)")
         guard let uuid = call.uuid else { return }
         provider.reportCall(with: uuid, endedAt: .now, reason: .failed)
         cleanUp(uuid)
     }
 
     func callDidDisconnect(call: Call, error: Error?) {
+        Log.info(.calls, "Call disconnected\(error.map { ": \($0)" } ?? "")")
         guard let uuid = call.uuid else { return }
         // The caller hung up mid-conversation; the agent saves what it has.
         activeAgent?.hangUp()

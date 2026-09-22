@@ -21,7 +21,7 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    TextField("https://assistant-1234.twil.io", text: $settings.twilioBaseURL)
+                    TextField("Twilio Functions URL", text: $settings.twilioBaseURL)
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -68,6 +68,9 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            .toolbar {
+                NavigationLink { LogsView() } label: { Label("Logs", systemImage: "doc.text.magnifyingglass") }
+            }
         }
     }
 

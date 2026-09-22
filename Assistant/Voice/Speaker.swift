@@ -35,7 +35,10 @@ final class Speaker {
             }
         }
         // Resample once for the whole sentence so chunk edges don't click.
-        guard let joined = PCM.join(chunks), let converted = PCM.convert(joined, to: format) else { return [] }
+        guard let joined = PCM.join(chunks), let converted = PCM.convert(joined, to: format) else {
+            Log.error(.audio, "Text-to-speech produced no audio for: \(text)")
+            return []
+        }
         return [converted]
     }
 }

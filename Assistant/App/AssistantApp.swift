@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        Log.info(.app, "Launched")
         // PushKit has to be ready at launch, including when iOS wakes us for a call.
         CallManager.shared.startListeningForCalls()
         UNUserNotificationCenter.current().delegate = self

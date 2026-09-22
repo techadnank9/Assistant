@@ -43,7 +43,12 @@ struct TalkView: View {
     }
 
     private func begin() {
-        let agent = VoiceAgent(io: LocalAudio(), owner: AppSettings.shared.ownerName, callerNumber: nil)
+        #if targetEnvironment(simulator)
+            let io: AudioIO = ScriptedCaller()
+        #else
+            let io: AudioIO = LocalAudio()
+        #endif
+        let agent = VoiceAgent(io: io, owner: AppSettings.shared.ownerName, callerNumber: nil)
         self.agent = agent
         lastError = nil
         Task {

@@ -18,13 +18,30 @@ final class LocalAudio: AudioIO, @unchecked Sendable {
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetoothHFP])
         try session.setActive(true)
-        guard await AVAudioApplication.requestRecordPermission() else { throw VoiceError.microphoneDenied }
-
-        // Voice processing cancels the agent's own voice picked up by the mic.
-        try engine.inputNode.setVoiceProcessingEnabled(true)
+        guard await AVAudioApplication.requestRecordPermission() else {
+            Log.error(.audio, "Microphone permission denied")
+            throw VoiceError.microphoneDenied
+        }
 
         let input = engine.inputNode
-        let inputFormat = input.outputFormat(forBus: 0)
+        // Voice processing cancels the agent's own voice picked up by the mic. Some hardware
+        // (and the simulator) reports no usable format with it on, so fall back to the raw mic.
+        do {
+            try input.setVoiceProcessingEnabled(true)
+        } catch {
+            Log.error(.audio, "Voice processing unavailable: \(error)")
+        }
+        var inputFormat = input.outputFormat(forBus: 0)
+        if inputFormat.sampleRate == 0 || inputFormat.channelCount == 0 {
+            Log.error(.audio, "Mic reported no format with voice processing; retrying without it")
+            try? input.setVoiceProcessingEnabled(false)
+            inputFormat = input.outputFormat(forBus: 0)
+        }
+        Log.info(.audio, "Mic format: \(inputFormat.sampleRate) Hz, \(inputFormat.channelCount) ch")
+        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+            Log.error(.audio, "No usable microphone")
+            throw VoiceError.noMicrophone
+        }
         input.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [continuation] buffer, _ in
             continuation.yield(buffer)
         }
@@ -41,6 +58,7 @@ final class LocalAudio: AudioIO, @unchecked Sendable {
         engine.attach(speaker)
         engine.connect(speaker, to: engine.mainMixerNode, format: playbackFormat)
         try engine.start()
+        Log.info(.audio, "Local audio started")
     }
 
     func stop() {
@@ -67,12 +85,14 @@ enum VoiceError: LocalizedError {
     case microphoneDenied
     case speechUnavailable
     case speechDenied
+    case noMicrophone
 
     var errorDescription: String? {
         switch self {
         case .microphoneDenied: "Microphone access is off. Turn it on in Settings."
         case .speechUnavailable: "On-device speech recognition isn't available for this language."
         case .speechDenied: "Speech recognition access is off. Turn it on in Settings."
+        case .noMicrophone: "No microphone is available right now."
         }
     }
 }

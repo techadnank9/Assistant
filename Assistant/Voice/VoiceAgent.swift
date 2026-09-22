@@ -42,13 +42,17 @@ final class VoiceAgent {
 
     /// Runs the whole conversation and returns the transcript.
     func run() async -> [Turn] {
+        Log.info(.voice, "Conversation started (caller \(callerNumber ?? "local test"))")
         do {
             try await start()
             try await converse()
         } catch is CancellationError {
+            Log.info(.voice, "Conversation cancelled")
         } catch {
+            Log.error(.voice, "Conversation failed: \(error)")
             self.error = error.localizedDescription
         }
+        Log.info(.voice, "Conversation ended after \(turns.count) turns")
         await finish()
         return turns
     }
@@ -63,12 +67,19 @@ final class VoiceAgent {
     }
 
     private func start() async throws {
+        phase = .starting
+        Log.info(.voice, "Loading model")
         try await LLMEngine.shared.load(AppSettings.shared.model)
+        Log.info(.voice, "Preparing speech recognition")
         try await listener.prepare()
+        Log.info(.voice, "Starting audio")
         try await io.start()
 
         // Only feed the recognizer while listening, so the agent never transcribes itself.
         let listener = listener
+        #if targetEnvironment(simulator)
+            (io as? ScriptedCaller)?.onSpeak = { text in Task { await listener.inject(text) } }
+        #endif
         Task { [weak self, io] in
             for await buffer in io.incoming {
                 guard let self, self.phase == .listening else { continue }
@@ -104,6 +115,8 @@ final class VoiceAgent {
             if hungUp { return }
 
             guard let heard else {
+                if let failure = await listener.failure { throw failure }
+                Log.info(.voice, "No speech before timeout")
                 silentTurns += 1
                 if silentTurns >= 2 {
                     try await say("I didn't catch anything, so I'll let you go. Goodbye!")
@@ -113,6 +126,7 @@ final class VoiceAgent {
                 continue
             }
             silentTurns = 0
+            Log.info(.voice, "Caller: \(heard)")
             turns.append(Turn(speaker: .caller, text: heard))
 
             let overtime = Date.now.timeIntervalSince(startedAt) > maxDuration
@@ -128,6 +142,8 @@ final class VoiceAgent {
     private func think(and prompt: String) async throws -> String {
         guard let conversation else { return "" }
         phase = .thinking
+        let thinkStart = Date.now
+        var firstToken = true
         var raw = ""
         var spoken = 0
         let index = turns.count
@@ -135,6 +151,10 @@ final class VoiceAgent {
 
         for try await chunk in try await LLMEngine.shared.respond(in: conversation, to: prompt) {
             if hungUp { break }
+            if firstToken {
+                firstToken = false
+                Log.info(.voice, "First token after \(Int(Date.now.timeIntervalSince(thinkStart) * 1000)) ms")
+            }
             raw += chunk
             let visible = ModelText.visible(raw).replacingOccurrences(of: Prompts.endMarker, with: "")
             turns[index].text = visible.trimmingCharacters(in: .whitespaces)
@@ -146,6 +166,7 @@ final class VoiceAgent {
             }
         }
         let visible = turns[index].text
+        Log.info(.voice, "Agent: \(visible)")
         if spoken < visible.count {
             await queue(String(visible.dropFirst(spoken)))
         }

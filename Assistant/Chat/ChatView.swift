@@ -56,6 +56,7 @@ struct ChatView: View {
                 Text("\(tps, specifier: "%.0f") tok/s")
                     .font(.footnote.monospacedDigit())
                     .foregroundStyle(.secondary)
+                    .fixedSize()
             }
         }
     }

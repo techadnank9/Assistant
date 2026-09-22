@@ -37,6 +37,7 @@ final class ChatModel {
             conversation = try await LLMEngine.shared.open(instructions: Prompts.chat, maxTokens: 512)
             status = .ready
         } catch {
+            Log.error(.model, "Chat couldn't start: \(error)")
             status = .failed(error.localizedDescription)
         }
     }
@@ -64,6 +65,7 @@ final class ChatModel {
                 if elapsed > 0 { tokensPerSecond = Double(chunks) / elapsed }
             } catch is CancellationError {
             } catch {
+                Log.error(.model, "Chat reply failed: \(error)")
                 update(reply.id, "⚠️ \(error.localizedDescription)")
             }
             status = .ready

@@ -18,7 +18,10 @@ final class MessageStore {
 
     func save(transcript: [Turn], callerNumber: String?, startedAt: Date, isTest: Bool) async {
         // Nothing but our own greeting: the caller hung up straight away.
-        guard transcript.contains(where: { $0.speaker == .caller }) else { return }
+        guard transcript.contains(where: { $0.speaker == .caller }) else {
+            Log.info(.messages, "Nothing said by the caller; not saving")
+            return
+        }
 
         // Finishing can outlive the call, which is when iOS would otherwise suspend us.
         let background = UIApplication.shared.beginBackgroundTask(withName: "Summarize call")
@@ -30,6 +33,7 @@ final class MessageStore {
         container.mainContext.insert(record)
         try? container.mainContext.save()
 
+        Log.info(.messages, "Saved message with \(transcript.count) turns")
         await summarize(record)
         await notify(record)
     }
@@ -38,8 +42,14 @@ final class MessageStore {
         let transcript = record.transcript
             .map { "\($0.speaker == .caller ? "Caller" : "Assistant"): \($0.text)" }
             .joined(separator: "\n")
-        guard let reply = try? await LLMEngine.shared.complete(instructions: Prompts.summary, prompt: transcript)
-        else { return }
+        let reply: String
+        do {
+            reply = try await LLMEngine.shared.complete(instructions: Prompts.summary, prompt: transcript)
+        } catch {
+            Log.error(.messages, "Summary failed: \(error)")
+            return
+        }
+        Log.info(.messages, "Summary: \(reply.replacingOccurrences(of: "\n", with: " | "))")
 
         let fields = Summary.parse(reply)
         record.callerName = fields.name

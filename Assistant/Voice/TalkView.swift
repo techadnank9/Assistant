@@ -7,13 +7,8 @@ struct TalkView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if let agent {
-                    LiveCallView(agent: agent, title: "Test call")
-                } else {
-                    start
-                }
-            }
+            start
+            .fullScreenCover(item: $agent) { LiveCallView(agent: $0, title: "Test call") }
             .navigationTitle("Talk")
             .navigationBarTitleDisplayMode(.inline)
         }
@@ -61,71 +56,104 @@ struct TalkView: View {
     }
 }
 
-/// Live transcript of a conversation, used for test calls and real ones.
+/// The live call screen, for test calls and real ones: the voice orb, what's being said
+/// right now, and the transcript one tap away.
 struct LiveCallView: View {
     let agent: VoiceAgent
     let title: String
+    @State private var showTranscript = false
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 14) {
-                        ForEach(agent.turns) { turn in
-                            TurnRow(turn: turn).id(turn.id)
-                        }
-                        if !agent.caption.isEmpty {
-                            TurnRow(turn: Turn(speaker: .caller, text: agent.caption))
-                                .opacity(0.5)
-                                .id("caption")
-                        }
-                    }
-                    .padding(16)
-                }
-                .onChange(of: agent.turns.last?.text) { proxy.scrollTo(agent.turns.last?.id, anchor: .bottom) }
-                .onChange(of: agent.caption) { proxy.scrollTo("caption", anchor: .bottom) }
+            VStack(spacing: 6) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                Text(phaseLabel)
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.6))
+                    .contentTransition(.opacity)
+                    .animation(.easeOut(duration: 0.2), value: agent.phase)
             }
-            Button("End", systemImage: "phone.down.fill") { agent.hangUp() }
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
-                .controlSize(.large)
-                .padding(.bottom, 24)
+            .padding(.top, 24)
+
+            Spacer(minLength: 24)
+
+            VoiceOrb(phase: agent.phase) { agent.audioLevel }
+                .frame(width: 240, height: 240)
+
+            Spacer(minLength: 24)
+
+            Text(currentLine)
+                .font(.title3.weight(.medium))
+                .foregroundStyle(.white.opacity(agent.phase == .listening ? 0.7 : 0.95))
+                .multilineTextAlignment(.center)
+                .lineLimit(4)
+                .frame(maxWidth: .infinity, minHeight: 110, alignment: .top)
+                .padding(.horizontal, 32)
+                .contentTransition(.opacity)
+                .animation(.easeOut(duration: 0.2), value: currentLine)
+
+            HStack(spacing: 48) {
+                Button { showTranscript = true } label: {
+                    Image(systemName: "text.bubble")
+                        .font(.title2)
+                        .frame(width: 64, height: 64)
+                        .background(.white.opacity(0.12), in: .circle)
+                }
+                .accessibilityLabel("Transcript")
+
+                Button { agent.hangUp() } label: {
+                    Image(systemName: "phone.down.fill")
+                        .font(.title2)
+                        .frame(width: 72, height: 72)
+                        .background(.red, in: .circle)
+                }
+                .accessibilityLabel("End call")
                 .disabled(agent.phase == .ended)
+            }
+            .foregroundStyle(.white)
+            .buttonStyle(PressScaleStyle())
+            .padding(.bottom, 32)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(hex: 0x07080D).ignoresSafeArea())
+        .preferredColorScheme(.dark)
+        .sheet(isPresented: $showTranscript) {
+            NavigationStack {
+                List(agent.turns) { TurnRow(turn: $0) }
+                    .navigationTitle("Transcript")
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+            .presentationDetents([.medium, .large])
         }
     }
 
-    private var header: some View {
-        VStack(spacing: 6) {
-            Text(title).font(.headline)
-            HStack(spacing: 6) {
-                Circle().fill(phaseColor).frame(width: 8, height: 8)
-                Text(phaseLabel).font(.subheadline).foregroundStyle(.secondary)
-            }
-            .animation(.default, value: agent.phase)
-        }
-        .padding(.vertical, 16)
-        .frame(maxWidth: .infinity)
-        .background(.bar)
+    /// What's being said right now: the caller's live caption while listening,
+    /// otherwise the agent's latest line.
+    private var currentLine: String {
+        if agent.phase == .listening, !agent.caption.isEmpty { return agent.caption }
+        if agent.phase == .starting { return "" }
+        return agent.turns.last(where: { $0.speaker == .agent })?.text ?? ""
     }
 
     private var phaseLabel: String {
         switch agent.phase {
-        case .starting: "Getting ready…"
+        case .starting: "Connecting…"
         case .listening: "Listening"
         case .thinking: "Thinking"
         case .speaking: "Speaking"
-        case .ended: "Ended"
+        case .ended: "Call ended"
         }
     }
+}
 
-    private var phaseColor: Color {
-        switch agent.phase {
-        case .listening: .green
-        case .thinking: .orange
-        case .speaking: .blue
-        case .starting, .ended: .gray
-        }
+/// Buttons compress slightly under the finger so a tap feels registered.
+private struct PressScaleStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 

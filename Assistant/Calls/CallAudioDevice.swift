@@ -17,6 +17,8 @@ final class CallAudioDevice: NSObject, AudioDevice, AudioIO, @unchecked Sendable
     private let listenIn: Bool
     private let engine = AVAudioEngine()
     private let agentAudio = SampleQueue()
+    private let meter = LevelMeter()
+    var level: Float { meter.value }
     private let lock = NSLock()
     private var renderContext: AudioDeviceContext?
     private var captureContext: AudioDeviceContext?
@@ -130,12 +132,15 @@ final class CallAudioDevice: NSObject, AudioDevice, AudioIO, @unchecked Sendable
                 AudioDeviceReadRenderData(context: context, data: $0, sizeInBytes: out.count * 2)
             }
             for i in 0..<out.count { out[i] = Float(scratch[i]) / 32_768 }
+            if let base = out.baseAddress { meter.push(base, count: out.count) }
             return noErr
         }
 
         let agentNode = AVAudioSourceNode(format: format) { [unowned self] _, _, frameCount, list in
             let out = Self.channel(list, frameCount)
-            agentAudio.read(into: out)
+            if agentAudio.read(into: out) > 0, let base = out.baseAddress {
+                meter.push(base, count: out.count)
+            }
             guard let context = lock.withLock({ captureContext }), out.count <= 8192 else { return noErr }
             for i in 0..<out.count {
                 scratch[i] = Int16(max(-1, min(1, out[i])) * 32_767)

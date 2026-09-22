@@ -9,6 +9,8 @@ final class LocalAudio: AudioIO, @unchecked Sendable {
     private let engine = AVAudioEngine()
     private let queue = SampleQueue()
     private var speaker: AVAudioSourceNode?
+    private let meter = LevelMeter()
+    var level: Float { meter.value }
 
     init() {
         (incoming, continuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(200))
@@ -42,16 +44,20 @@ final class LocalAudio: AudioIO, @unchecked Sendable {
             Log.error(.audio, "No usable microphone")
             throw VoiceError.noMicrophone
         }
-        input.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [continuation] buffer, _ in
+        input.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [continuation, meter] buffer, _ in
+            meter.push(buffer)
             continuation.yield(buffer)
         }
 
         let queue = queue
+        let meter = meter
         let speaker = AVAudioSourceNode(format: playbackFormat) { _, _, frameCount, audioBufferList in
             let buffers = UnsafeMutableAudioBufferListPointer(audioBufferList)
             let out = UnsafeMutableBufferPointer<Float>(
                 start: buffers[0].mData?.assumingMemoryBound(to: Float.self), count: Int(frameCount))
-            queue.read(into: out)
+            if queue.read(into: out) > 0, let base = out.baseAddress {
+                meter.push(base, count: out.count)
+            }
             return noErr
         }
         self.speaker = speaker

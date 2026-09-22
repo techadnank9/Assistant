@@ -16,7 +16,9 @@ final class ScriptedCaller: AudioIO, @unchecked Sendable {
         "Thanks so much, bye!",
     ]
     private var next = 0
-    private var queuedSeconds = 0.0
+    private var queued: [AVAudioPCMBuffer] = []
+    private let meter = LevelMeter()
+    var level: Float { meter.value }
     private var stopped = false
     /// The simulator's recognizer has no speech model, so the words are also handed over directly.
     var onSpeak: (@Sendable (String) -> Void)?
@@ -35,14 +37,19 @@ final class ScriptedCaller: AudioIO, @unchecked Sendable {
     }
 
     func play(_ buffer: AVAudioPCMBuffer) {
-        queuedSeconds += Double(buffer.frameLength) / buffer.format.sampleRate
+        queued.append(buffer)
     }
 
-    /// "Plays" the agent's reply in real time, then the caller answers.
+    /// "Plays" the agent's reply in real time (metered for the orb), then the caller answers.
     func waitUntilPlayed() async {
-        let seconds = queuedSeconds
-        queuedSeconds = 0
-        try? await Task.sleep(for: .seconds(seconds))
+        let buffers = queued
+        queued.removeAll()
+        for buffer in buffers {
+            for chunk in Self.split(buffer, frames: 4800) where !stopped {
+                meter.push(chunk)
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
         guard !stopped, next < lines.count else { return }
         let line = lines[next]
         next += 1
@@ -59,6 +66,7 @@ final class ScriptedCaller: AudioIO, @unchecked Sendable {
         // Feed in real time, 100 ms at a time, then a pause so the turn ends.
         for buffer in audio {
             for chunk in Self.split(buffer, frames: 4800) {
+                meter.push(chunk)
                 continuation.yield(chunk)
                 try? await Task.sleep(for: .milliseconds(100))
             }

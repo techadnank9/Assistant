@@ -1,4 +1,6 @@
+import Accelerate
 @preconcurrency import AVFoundation
+import QuartzCore
 
 /// Where the agent hears and speaks. `LocalAudio` is the phone's mic and speaker
 /// (Phase 2); `CallAudioDevice` is a live Twilio call (Phase 3).
@@ -14,6 +16,43 @@ protocol AudioIO: AnyObject, Sendable {
     func play(_ buffer: AVAudioPCMBuffer)
     /// Returns once everything queued with `play` has been heard.
     func waitUntilPlayed() async
+    /// Loudness of whatever is being heard or spoken right now, 0...1. Drives the voice orb.
+    var level: Float { get }
+}
+
+/// Smoothed loudness from raw samples. Safe to feed from a real-time audio thread.
+final class LevelMeter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var peak: Float = 0
+    private var stamp = CACurrentMediaTime()
+
+    func push(_ samples: UnsafePointer<Float>, count: Int) {
+        guard count > 0 else { return }
+        var rms: Float = 0
+        vDSP_rmsqv(samples, 1, &rms, vDSP_Length(count))
+        // Map roughly -50 dB (room tone) ... -10 dB (loud speech) onto 0...1.
+        let db = 20 * log10(max(rms, 1e-6))
+        let normalized = min(1, max(0, (db + 50) / 40))
+        let now = CACurrentMediaTime()
+        lock.withLock {
+            peak = max(normalized, decayed(at: now))
+            stamp = now
+        }
+    }
+
+    func push(_ buffer: AVAudioPCMBuffer) {
+        guard let data = buffer.floatChannelData else { return }
+        push(data[0], count: Int(buffer.frameLength))
+    }
+
+    var value: Float {
+        lock.withLock { decayed(at: CACurrentMediaTime()) }
+    }
+
+    /// Falls back toward silence quickly so the orb settles between words.
+    private func decayed(at now: CFTimeInterval) -> Float {
+        peak * Float(exp(-(now - stamp) * 5))
+    }
 }
 
 enum PCM {

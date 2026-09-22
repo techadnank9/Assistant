@@ -23,6 +23,8 @@ final class VoiceAgent {
     let startedAt = Date.now
 
     private let io: AudioIO
+    /// Live loudness of the conversation, read every frame by the orb (not observed).
+    nonisolated var audioLevel: Float { io.level }
     private let owner: String
     private let callerNumber: String?
     private let listener = Listener()
@@ -213,3 +215,5 @@ final class VoiceAgent {
         return nil
     }
 }
+
+extension VoiceAgent: Identifiable {}

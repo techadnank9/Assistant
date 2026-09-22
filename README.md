@@ -134,8 +134,11 @@ cd finetune && ./run_all.sh    # real data → practice calls → LoRA → fuse 
 What actually fixed the base model's weak spot (asking the same question when a caller repeats or refuses)
 was a prompt rule plus a repeat guard in the app: repeated replies dropped from 15.6% to **2.1%** and calls
 ended properly went from 91% to **97%** on 32 held-out callers. DPO did its job (it preferred the better reply
-82% of the time on unseen pairs), but the fine-tuning before it hurt more than DPO recovered; the next
-attempt is DPO directly on the base model.
+82% of the time on unseen pairs), but the fine-tuning before it hurt more than DPO recovered.
+
+| Round | Training data | Result vs base (same prompt and repeat guard) | Shipped |
+|---|---|---|---|
+| 5 | DPO directly on the base model, 118 pairs of teacher reply vs its own worst reply | 9.75 vs 9.62 /10, **0%** vs 2.1% repeats, but ended 91% vs 97% of calls | as an opt-in model ([adnank9/qwen3-1.7b-phone-assistant-dpo-experimental-4bit](https://huggingface.co/adnank9/qwen3-1.7b-phone-assistant-dpo-experimental-4bit)) |
 
 ## Project layout
 

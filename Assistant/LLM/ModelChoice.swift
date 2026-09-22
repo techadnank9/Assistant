@@ -13,7 +13,12 @@ struct ModelOption: Identifiable, Hashable, Sendable {
     static let tuned = ModelOption(id: "adnank9/qwen3-1.7b-phone-assistant-4bit", label: "Phone assistant 1.7B (fine-tuned)")
     static let tunedShipped = false
 
-    static let presets: [ModelOption] = tunedShipped ? [.tuned, .base, .small] : [.base, .small]
+    /// Round 5: DPO on the base model. Never repeats itself in testing, but ended calls properly a bit less
+    /// often than base (91% vs 97%), so it's opt-in rather than the default.
+    static let experimental = ModelOption(
+        id: "adnank9/qwen3-1.7b-phone-assistant-dpo-experimental-4bit", label: "Phone assistant DPO (experimental)")
+
+    static let presets: [ModelOption] = (tunedShipped ? [.tuned, .base] : [.base]) + [.experimental, .small]
     /// What new installs (and anyone who never picked a model) download.
     static var `default`: ModelOption { tunedShipped ? .tuned : .base }
 

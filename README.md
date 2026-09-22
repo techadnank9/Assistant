@@ -1,62 +1,182 @@
+<div align="center">
+
 # Assistant
 
-A phone agent that runs on the iPhone itself. Someone calls your Twilio number, your iPhone rings,
-you tap Answer, and an on-device Qwen3 model takes a message. Afterwards you get a summary notification.
+### Your iPhone answers your calls, and the AI runs entirely on the phone.
 
-| Phase | What | Where |
-|---|---|---|
-| 1 | On-device LLM chat (Qwen3-1.7B, MLX) | `Assistant/LLM`, `Assistant/Chat` |
-| 2 | Voice loop: SpeechAnalyzer → Qwen → AVSpeechSynthesizer, with a live voice orb | `Assistant/Voice`, **Assistant** tab (home) |
-| 3 | Twilio number → VoIP push → CallKit → Twilio call → agent | `Assistant/Calls`, `twilio/` |
-| 4 | Transcript saved, Qwen summary, notification | `Assistant/Messages`, **Messages** tab |
-| 5 | Fine-tune with MLX-LM on the Mac, swap in, compare | `finetune/` |
+A private AI receptionist for iOS. When you can't pick up, it answers, has a real conversation,
+takes the message, and hands you a summary. The language model, speech recognition and voice
+all run on the iPhone. No cloud LLM, no per-minute AI bill, and nobody else hears your calls.
 
-## Run the app
+![iOS 26](https://img.shields.io/badge/iOS-26-000?logo=apple)
+![Swift 6](https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white)
+![MLX](https://img.shields.io/badge/MLX-on--device-6E56CF)
+![Qwen3](https://img.shields.io/badge/Qwen3-1.7B-3B82F6)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
+
+<img src="docs/orb-idle.png" width="240" alt="Idle: tap the orb to talk">&nbsp;&nbsp;
+<img src="docs/orb-listening.png" width="240" alt="Listening to the caller">&nbsp;&nbsp;
+<img src="docs/orb-speaking.png" width="240" alt="The assistant speaking">
+
+</div>
+
+---
+
+## Why
+
+Cloud voice agents stream every word of your calls to someone else's servers and bill you by the minute.
+A 2024 iPhone already carries a capable language model, a speech recognizer and a natural voice. **Assistant**
+puts them together into an agent that picks up for you:
+
+- 🔒 **Private by design.** Transcription, reasoning and speech all happen on the phone. The call itself
+  travels over the phone network (Twilio), but nothing that *understands* the call runs anywhere else.
+- 💸 **No AI running cost.** The model is free once downloaded. There's no token or per-minute metering.
+- 🧠 **Knows who it works for.** Give it your profile and it can tell a recruiter what you do in one sentence.
+  It never shares your address, schedule or whereabouts.
+- 📝 **Hands you the message, not a voicemail.** Name, reason, callback and urgency, summarized and pushed as a notification.
+
+## What it does
+
+| | |
+|---|---|
+| 🎙️ **Voice orb** | Tap the orb and talk. It breathes with your voice, swirls while thinking, and glows when it speaks. |
+| ☎️ **Answers real calls** | Your Twilio number rings the iPhone through CallKit. Tap Answer and the agent takes the call. |
+| ⚡ **Streams its replies** | Speaks sentence by sentence as the model writes, so it doesn't wait for the whole answer. |
+| 📬 **Messages** | Every call is saved with a transcript and an AI summary. Urgent calls are flagged, and callback is one tap. |
+| 💬 **Chat** | Type to the same on-device model. |
+| 🪵 **Logs** | Every step (model load, speech, each turn, time to first reply) is viewable and shareable in Settings. |
+| 🧪 **Fine-tuning** | Train your own version on a Mac with MLX-LM and swap it in. |
+
+## How it works
+
+```mermaid
+flowchart LR
+    Caller((Caller)) -->|phone network| Twilio[Twilio number]
+    Twilio -->|VoIP push| CallKit[CallKit ring]
+    CallKit -->|you tap Answer| Audio[Call audio]
+    subgraph iPhone [Everything below runs on the iPhone]
+        Audio --> STT[SpeechAnalyzer<br/>speech → text]
+        STT --> LLM[Qwen3 1.7B on MLX<br/>decides what to say]
+        LLM --> TTS[AVSpeechSynthesizer<br/>text → voice]
+        TTS --> Audio
+        LLM --> Summary[Summary + notification]
+    end
 ```
-xcodegen generate && open Assistant.xcodeproj
+
+1. **Listen.** On-device `SpeechAnalyzer` transcribes the caller. The turn ends when the words stop changing.
+2. **Think.** Qwen3-1.7B (4-bit, MLX) replies in one or two spoken sentences, asking for one missing detail at a time.
+3. **Speak.** Each finished sentence goes straight to speech and into the call.
+4. **Wrap up.** When it has the message, it reads it back, says goodbye and hangs up. Then it summarizes the call and notifies you.
+
+## Quick start
+
+**Requirements:** a Mac with Xcode 26, [XcodeGen](https://github.com/yonaskolb/XcodeGen), and an iPhone on iOS 26.
+
+```bash
+git clone https://github.com/techadnank9/Assistant.git
+cd Assistant
+xcodegen generate
+open Assistant.xcodeproj
 ```
-Run on a real iPhone for the real model and speech. The first launch downloads about 1 GB of weights, once.
-The home screen is the voice orb: tap it and talk like a caller would. No setup needed.
-The simulator runs the whole app with a scripted model and a scripted caller, because MLX and speech models can't run there.
 
-Signing: team S2UTA2J3GD, bundle ID `ai.assistantagent.call` (App Store Connect "Phone Assistant", for TestFlight).
-Having trouble on a device? **Settings → Logs** shows every step, with a share button.
+1. Pick your team under **Signing & Capabilities**. The app asks for more memory, which needs a paid developer account.
+2. Run it on your iPhone. The first launch downloads the model once (about 1 GB on Wi-Fi).
+3. Tap the orb and pretend you're calling. The message shows up under **Messages**.
 
-**Your profile:** the assistant can tell recruiters and collaborators what you do, and nothing personal. The text comes
-from `Assistant/Resources/OwnerProfile.txt` and is editable in Settings. That file is gitignored.
+> **Simulator:** the whole app runs in the simulator, with a scripted model and a scripted caller standing in, because MLX and
+> Apple's speech models can't run there. It's handy for UI work. The real model needs a device.
 
-## Hook up the phone number (one time)
-Only these steps need your logins. Everything else is scripted.
+<details>
+<summary><b>Answer real phone calls (Twilio)</b></summary>
 
-1. **Twilio account**: put `ACCOUNT_SID` and `AUTH_TOKEN` from console.twilio.com into `twilio/.env`.
-2. **VoIP certificate**: in developer.apple.com → Certificates → **+** → *VoIP Services Certificate*,
-   pick `ai.assistantagent.call`, and upload `twilio/certs/voip.csr` (already generated). Download the `.cer`, then:
-   ```
-   twilio/voip-cert.sh import ~/Downloads/voip_services.cer
-   ```
-3. **Deploy**: `cd twilio && npm run setup -- --buy` creates the API key and push credential, deploys the Functions,
-   buys a US number if the account has none, and points it at the app. It prints a URL and a secret.
-4. In the app go to **Settings → Phone number**, paste the URL and secret, then tap **Register for calls**.
+1. Put `ACCOUNT_SID` and `AUTH_TOKEN` from the Twilio console into `twilio/.env`.
+2. Create a **VoIP Services Certificate** for your bundle ID at developer.apple.com, using the request generated by
+   `twilio/voip-cert.sh csr`. Then import it with `twilio/voip-cert.sh import ~/Downloads/voip_services.cer`.
+3. `cd twilio && npm install && npm run setup`. This creates the API key and push credential, deploys the token, incoming
+   and voicemail Functions, and points your number at the app. Add `-- --buy` to buy a number (this costs money).
+4. In the app, open **Settings → Phone number**, paste the printed URL and secret, and tap **Register for calls**.
 
-Call the number and the iPhone rings. If nobody answers within 25 seconds, the caller gets voicemail.
+If nobody answers within 25 seconds, the caller gets voicemail.
+</details>
 
-## Fine-tuning (Phase 5)
-Training runs on the Mac with MLX-LM. Qwen3-8B plays caller and ideal assistant, and Qwen3-1.7B learns from it with LoRA.
-The training data is practice calls (including recruiter and collaborator calls based on the owner profile) plus a 10% slice of real
-spoken phone-assistant dialogs from [Google Taskmaster-1](https://github.com/google-research-datasets/Taskmaster) (CC BY 4.0).
+<details>
+<summary><b>Tell it about yourself</b></summary>
+
+Put a few lines about your work in `Assistant/Resources/OwnerProfile.txt`, or type them in Settings. The assistant
+uses them to answer "what does Adnan do?" in one sentence, then takes the message. The file is gitignored.
+</details>
+
+## Fine-tuning your own model
+
+Everything in `finetune/` runs on an Apple silicon Mac:
+
+- **Teacher and student:** Qwen3-8B acts out realistic calls (recruiters, doctor's offices, delivery drivers, spam,
+  urgent family calls, callers fishing for personal info) as both caller and ideal assistant. Qwen3-1.7B learns from it with LoRA.
+- **Real data:** a 10% slice of human phone-assistant dialogs from Google's
+  [Taskmaster-1](https://github.com/google-research-datasets/Taskmaster) (CC BY 4.0) keeps replies short and spoken.
+- **Quality gates:** calls that loop, ramble or never end are dropped. The best checkpoint is picked by validation loss.
+- **Honest evaluation:** held-out callers are scored by the teacher on capture, brevity, naturalness, safety and ending.
+  A tuned model ships only if it beats the base.
+
+```bash
+cd finetune && ./run_all.sh    # real data → practice calls → LoRA → fuse → 4-bit → before/after report
 ```
-cd finetune && ./run_all.sh     # real data → practice calls → train → before/after report, a few hours on an M4
-```
-The result is `finetune/models/qwen3-1.7b-assistant-4bit`, and the comparison is in `finetune/results/report.md`. A tuned
-model only ships if it beats the base model. Then it goes to Hugging Face and becomes the default in `ModelOption`.
 
-| Round | Data | Score (/10) vs base | Shipped |
+| Round | Training data | Score vs base (/10) | Shipped |
 |---|---|---|---|
-| 2 | 317 practice calls + 320 Taskmaster | 9.06 vs 9.19, wordier, ended 81% of calls | no |
-| 3 | more practice calls, Taskmaster capped at 10% | running | — |
+| 2 | 317 practice calls + 320 Taskmaster | 9.06 vs **9.19** (wordier, ended 81% of calls) | no |
+| 3 | more practice calls, Taskmaster capped at 10% | in progress | — |
 
-## Notes
-- The call prompt lives in both `Assistant/LLM/ModelChoice.swift` and `finetune/common.py`. Keep them in sync.
-- iOS blocks GPU work from background apps. When a call is answered from the lock screen, the agent runs Qwen on the CPU,
-  which is slower. Open the app during the call to switch it back to the GPU.
-- CLI builds need `-skipMacroValidation -skipPackagePluginValidation`. More build and architecture notes are in CLAUDE.md.
+## Project layout
+
+```
+Assistant/
+  LLM/        LLMEngine: one actor owning the model and every conversation (CPU fallback in background)
+  Voice/      VoiceAgent loop, Listener (speech → text), Speaker (text → speech), VoiceOrb, audio I/O
+  Calls/      PushKit + CallKit + Twilio, CallAudioDevice bridging call audio to the agent
+  Messages/   SwiftData store, Qwen summaries, notifications
+  Chat/ Settings/ Support/
+twilio/       Functions: /token, /incoming, /voicemail, plus the one-shot setup script
+finetune/     dataset generation, LoRA training, evaluation
+```
+
+## Roadmap
+
+- [x] On-device Qwen3 chat
+- [x] Voice loop with streaming speech and a live orb
+- [x] Real calls through Twilio, CallKit and PushKit
+- [x] Messages with summaries and notifications
+- [x] Fine-tuning pipeline with before/after evaluation
+- [ ] A fine-tuned model that beats the base, shipped as the default
+- [ ] Barge-in, so callers can interrupt the assistant mid-sentence
+- [ ] More languages
+- [ ] Call screening: let VIPs ring through, send spam straight to the assistant
+- [ ] Faster answering from the lock screen (background GPU when iOS allows it)
+
+## FAQ
+
+**Does any audio leave my phone?** The call itself travels over the phone network through Twilio, like any call.
+Transcription, the language model, the voice and the summary all run on the iPhone.
+
+**Which iPhones work?** Any iPhone on iOS 26 with enough free memory for a roughly 1 GB model. Newer Pro models run it
+fastest. For older devices, Settings has a lighter 0.6B model.
+
+**Why is it slower when I answer from the lock screen?** iOS doesn't let background apps use the GPU, so the model
+runs on the CPU until you open the app.
+
+**Can I use a different model?** Yes. Settings → Model takes any MLX model repo from Hugging Face.
+
+## Contributing
+
+Issues and PRs are welcome. See [CLAUDE.md](CLAUDE.md) for build flags, simulator notes and the architecture.
+The call prompt lives in both `Assistant/LLM/ModelChoice.swift` and `finetune/common.py`. Keep them in sync.
+
+## Credits
+
+Built on [MLX Swift](https://github.com/ml-explore/mlx-swift) and [mlx-swift-lm](https://github.com/ml-explore/mlx-swift-lm),
+[Qwen3](https://huggingface.co/Qwen), [Twilio Voice iOS](https://github.com/twilio/twilio-voice-ios), Apple's Speech and
+AVFoundation, and Google's [Taskmaster](https://github.com/google-research-datasets/Taskmaster) dataset.
+
+## License
+
+[MIT](LICENSE) © Mohammed Adnan

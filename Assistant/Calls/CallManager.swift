@@ -93,9 +93,27 @@ final class CallManager: NSObject {
 
         provider.reportNewIncomingCall(with: invite.uuid, update: update) { [weak self] error in
             Task { @MainActor in
-                if error != nil { self?.invites[invite.uuid] = nil }
-                self?.pendingPushCompletion?()
-                self?.pendingPushCompletion = nil
+                guard let self else { return }
+                if error != nil { self.invites[invite.uuid] = nil }
+                self.pendingPushCompletion?()
+                self.pendingPushCompletion = nil
+                if error == nil { self.autoAnswerIfWanted(invite.uuid) }
+            }
+        }
+    }
+
+    /// The point of the whole app: the assistant takes the call itself, without anyone tapping
+    /// Answer. CallKit still rings first, so the owner can grab it in those few seconds instead.
+    private func autoAnswerIfWanted(_ uuid: UUID) {
+        guard AppSettings.shared.autoAnswer else { return }
+        let delay = AppSettings.shared.autoAnswerDelay
+        Task {
+            try? await Task.sleep(for: .seconds(delay))
+            // Still ringing? (Not already answered, declined, or hung up.)
+            guard invites[uuid] != nil else { return }
+            Log.info(.calls, "Auto-answering after \(Int(delay))s")
+            callController.request(CXTransaction(action: CXAnswerCallAction(call: uuid))) { error in
+                if let error { Log.error(.calls, "Auto-answer failed: \(error.localizedDescription)") }
             }
         }
     }

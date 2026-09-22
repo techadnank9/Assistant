@@ -28,11 +28,20 @@ struct SettingsView: View {
                     LabeledContent("Status") { registrationStatus }
                     Button("Register for calls") { Task { await calls.register() } }
                         .disabled(!TokenService.isConfigured || calls.registration == .registering)
+                    Toggle("Answer calls automatically", isOn: $settings.autoAnswer)
+                    if settings.autoAnswer {
+                        Picker("Ring first for", selection: $settings.autoAnswerDelay) {
+                            Text("No ring").tag(0.0)
+                            Text("4 seconds").tag(4.0)
+                            Text("10 seconds").tag(10.0)
+                            Text("20 seconds").tag(20.0)
+                        }
+                    }
                     Toggle("Listen in on calls", isOn: $settings.listenIn)
                 } header: {
                     Text("Phone number")
                 } footer: {
-                    Text("Your Twilio Functions URL and the APP_SECRET you deployed with. Once registered, calls to your Twilio number ring this iPhone. Tap Answer and the assistant takes it.")
+                    Text("Once registered, calls to your Twilio number ring this iPhone and the assistant picks up on its own. It rings first, so you can take the call yourself instead.")
                 }
 
                 ModelSection(settings: settings)

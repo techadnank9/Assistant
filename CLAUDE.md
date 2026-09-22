@@ -39,7 +39,10 @@ README.md covers what it is and how to run it. This file is how to work on it.
   downloads each voice on its own (⬇ on its row); `startDownloadIfNeeded()` at launch starts the selected one,
   because the setup screen is skipped once mic, speech and model are ready. Falls back to Apple's voice until ready.
 - `ModelOption.tunedShipped` switches new installs to the fine-tuned model on Hugging Face.
-- `Calls/CallManager` handles PushKit → CallKit → Twilio. `CallAudioDevice` bridges call audio through AVAudioEngine
+- `Calls/CallManager` handles PushKit → CallKit → Twilio. It answers by itself (`autoAnswer`, on by
+  default, after `autoAnswerDelay` seconds of ringing) by requesting `CXAnswerCallAction`; an unanswered
+  call is the assistant not working. The Twilio account, URL and secret come from the gitignored
+  `Assistant/Resources/TwilioConfig.plist`. `CallAudioDevice` bridges call audio through AVAudioEngine
   source nodes.
 - `Messages/MessageStore` saves each call (SwiftData), summarizes it with Qwen and posts a notification.
 

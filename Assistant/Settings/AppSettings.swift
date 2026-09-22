@@ -14,6 +14,10 @@ final class AppSettings {
     var twilioBaseURL: String { didSet { save("twilioBaseURL", twilioBaseURL) } }
     /// Shared secret the token function checks, so strangers can't mint tokens.
     var twilioSecret: String { didSet { save("twilioSecret", twilioSecret) } }
+    /// Let the assistant pick up by itself, so calls are taken when the phone is in a pocket.
+    var autoAnswer: Bool { didSet { save("autoAnswer", autoAnswer) } }
+    /// Seconds the phone rings first, so the owner can take the call instead.
+    var autoAnswerDelay: Double { didSet { save("autoAnswerDelay", autoAnswerDelay) } }
     /// Play the call through the phone so you can hear the agent and the caller.
     var listenIn: Bool { didSet { save("listenIn", listenIn) } }
     var modelID: String { didSet { save("modelID", modelID) } }
@@ -45,6 +49,8 @@ final class AppSettings {
         orbMode = d.string(forKey: "orbMode") ?? "owner"
         voiceID = d.string(forKey: "voiceID") ?? ""
         naturalVoice = d.object(forKey: "naturalVoice") as? Bool ?? true
+        autoAnswer = d.object(forKey: "autoAnswer") as? Bool ?? true
+        autoAnswerDelay = d.object(forKey: "autoAnswerDelay") as? Double ?? 4
         kokoroVoice = d.string(forKey: "kokoroVoice") ?? "af_heart"
         profilePromptSeen = d.bool(forKey: "profilePromptSeen")
     }

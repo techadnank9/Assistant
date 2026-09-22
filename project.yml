@@ -39,6 +39,9 @@ targets:
       path: Assistant/Resources/Info.plist
       properties:
         CFBundleDisplayName: Assistant
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
         UIBackgroundModes: [audio, voip]
         NSMicrophoneUsageDescription: The assistant listens so you can test it by talking to it.
@@ -49,6 +52,9 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.techadnank9.assistant
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: YES
     dependencies:

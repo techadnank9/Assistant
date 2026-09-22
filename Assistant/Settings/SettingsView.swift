@@ -213,9 +213,7 @@ private struct ModelSection: View {
 private struct VoiceSection: View {
     @Bindable var settings: AppSettings
     @State private var previewer = Speaker()
-    @State private var downloaded = NaturalVoice.isDownloaded
-    @State private var downloading = false
-    @State private var failure: String?
+    @State private var voiceStatus = VoiceStatus.shared
     @State private var samplePlayer: AVAudioPlayer?
     @State private var playing: String?
     private let appleVoices = Speaker.availableVoices()
@@ -240,17 +238,25 @@ private struct VoiceSection: View {
         }
     }
 
-    private func download() {
-        downloading = true
-        failure = nil
-        Task {
-            do {
-                try await NaturalVoice.shared.load()
-            } catch {
-                failure = error.localizedDescription
+    /// Download state for one voice, at the right of its row.
+    @ViewBuilder
+    private func downloadControl(_ voice: NaturalVoice.Voice) -> some View {
+        if voiceStatus.ready.contains(voice.id) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.title3).foregroundStyle(.green)
+                .accessibilityLabel("\(voice.label) is on this iPhone")
+        } else if let fraction = voiceStatus.progress[voice.id] {
+            Text(fraction > 0 ? "\(Int(fraction * 100))%" : "…")
+                .font(.footnote).monospacedDigit().foregroundStyle(.secondary)
+                .frame(minWidth: 38, alignment: .trailing)
+        } else {
+            Button {
+                NaturalVoice.download(voice.id)
+            } label: {
+                Image(systemName: "arrow.down.circle").font(.title3)
             }
-            downloading = false
-            downloaded = NaturalVoice.isDownloaded
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Download \(voice.label)")
         }
     }
 
@@ -265,6 +271,7 @@ private struct VoiceSection: View {
                     HStack {
                         Button {
                             settings.kokoroVoice = voice.id
+                            NaturalVoice.download(voice.id)
                         } label: {
                             HStack {
                                 Text(voice.label).foregroundStyle(.primary)
@@ -286,21 +293,13 @@ private struct VoiceSection: View {
                         }
                         .buttonStyle(.borderless)
                         .accessibilityLabel("Play \(voice.label)")
+                        if NaturalVoice.isSupported && settings.naturalVoice {
+                            downloadControl(voice)
+                        }
                     }
-                }
-            }
-            if NaturalVoice.isSupported && settings.naturalVoice {
-                LabeledContent("Download") {
-                    if downloaded {
-                        Label("On this iPhone", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-                    } else if downloading {
-                        ProgressView()
-                    } else {
-                        Button("Download voice · about 328 MB") { download() }
+                    if let failure = voiceStatus.failure[voice.id] {
+                        Text(failure).font(.footnote).foregroundStyle(.red)
                     }
-                }
-                if let failure {
-                    Text(failure).font(.footnote).foregroundStyle(.red)
                 }
             }
             if !NaturalVoice.isSupported || !settings.naturalVoice {
@@ -324,9 +323,10 @@ private struct VoiceSection: View {
             Text("Voice")
         } footer: {
             Text(NaturalVoice.isSupported && settings.naturalVoice
-                 ? "A neural voice (Kokoro) that runs on this iPhone and sounds much more human. It downloads once."
+                 ? "Tap ▶ to hear a voice, then ⬇ to put it on this iPhone. Each voice is 0.5 MB; the first one also downloads the 327 MB engine they all share. Downloads continue if you leave the app, and until one is ready the assistant uses Apple's voice."
                  : "For a more natural Apple voice, download an Enhanced or Premium English voice in the iPhone's Settings → Accessibility → Spoken Content → Voices, then pick it here.")
         }
+        .onAppear { voiceStatus.refresh() }
     }
 
     private static func quality(_ voice: AVSpeechSynthesisVoice) -> String {

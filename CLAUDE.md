@@ -35,6 +35,9 @@ README.md covers what it is and how to run it. This file is how to work on it.
 - `Setup/SetupModel` gates the app: mic permission, speech assets (`Listener.setUp`), model download. The orb
   only appears once they're ready; `RootView` checks on every launch.
 - `MessageStore.briefing()` (date + latest messages) is appended to the Chat and My assistant prompts.
+- `NaturalVoice` (Kokoro) is the neural voice: one shared 327 MB engine plus a 0.5 MB file per voice. Settings
+  downloads each voice on its own (⬇ on its row); `startDownloadIfNeeded()` at launch starts the selected one,
+  because the setup screen is skipped once mic, speech and model are ready. Falls back to Apple's voice until ready.
 - `ModelOption.tunedShipped` switches new installs to the fine-tuned model on Hugging Face.
 - `Calls/CallManager` handles PushKit → CallKit → Twilio. `CallAudioDevice` bridges call audio through AVAudioEngine
   source nodes.

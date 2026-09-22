@@ -86,8 +86,9 @@ struct RootView: View {
         }
         .task {
             await chat.loadModel()
-            // Warm the natural voice after the language model, so the first reply isn't delayed.
-            if Speaker.usesNaturalVoice { try? await NaturalVoice.shared.load() }
+            // Warm the natural voice after the language model (downloading it first if needed, in the
+            // background: the setup screen is skipped once everything else is ready).
+            NaturalVoice.startDownloadIfNeeded()
         }
         .fullScreenCover(item: Binding(get: { calls.activeAgent.map(AgentBox.init) }, set: { _ in })) { box in
             LiveCallView(agent: box.agent, title: "Live call")

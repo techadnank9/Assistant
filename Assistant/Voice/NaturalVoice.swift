@@ -1,10 +1,29 @@
 import AVFoundation
 import Foundation
+import Observation
 import MLX
 import MLXAudioTTS
 
+/// Which voices are on this iPhone, and what's downloading right now. Read by Settings.
+@MainActor
+@Observable
+final class VoiceStatus {
+    static let shared = VoiceStatus()
+
+    /// Voice id → 0...1 while its download is running.
+    var progress: [String: Double] = [:]
+    /// Voice id → why its last download failed.
+    var failure: [String: String] = [:]
+    /// Voices that can be spoken without the network.
+    var ready: Set<String> = []
+
+    func refresh() {
+        ready = Set(NaturalVoice.voices.map(\.id).filter(NaturalVoice.isReady))
+    }
+}
+
 /// Kokoro-82M: a neural voice that runs on the iPhone (MLX) and sounds far more human than
-/// Apple's built-in voices. Downloads once (~330 MB) from Hugging Face.
+/// Apple's built-in voices. The engine downloads once (327 MB); each voice is 0.5 MB.
 actor NaturalVoice {
     static let shared = NaturalVoice()
     static let repo = "mlx-community/Kokoro-82M-bf16"
@@ -42,12 +61,19 @@ actor NaturalVoice {
     static let engineFiles = ["config.json", "kokoro-v1_0.safetensors"]
     static func voiceFile(_ voice: String) -> String { "voices/\(voice).safetensors" }
 
-    /// Ready to speak with the chosen voice, without needing the network.
-    @MainActor static var isDownloaded: Bool {
-        let voice = AppSettings.shared.kokoroVoice
-        return ModelFiles.localDirectory(for: repo, requiring: engineFiles + [voiceFile(voice)]) != nil
+    /// This voice can be spoken without the network: the shared engine plus its own file.
+    static func isReady(_ voice: String) -> Bool {
+        ModelFiles.localDirectory(for: repo, requiring: engineFiles + [voiceFile(voice)]) != nil
             || ModelFiles.localDirectory(for: repo, requiring: engineFiles) != nil && hasHubVoices
     }
+
+    /// True when the engine is here, so any further voice is only a 0.5 MB download.
+    static var engineIsDownloaded: Bool {
+        ModelFiles.localDirectory(for: repo, requiring: engineFiles) != nil
+    }
+
+    /// Ready to speak with the chosen voice, without needing the network.
+    @MainActor static var isDownloaded: Bool { isReady(AppSettings.shared.kokoroVoice) }
 
     /// Older Hugging Face cache downloads keep every voice together.
     private static var hasHubVoices: Bool {
@@ -63,22 +89,22 @@ actor NaturalVoice {
         let task = Task { () throws -> KokoroModel in
             let start = Date.now
             Log.info(.audio, "Loading natural voice (Kokoro)")
-            // All voices come in one download that continues in the background if the app closes.
-            // The engine is 327 MB and each voice is only 0.5 MB, so download the engine plus the
-            // chosen voice; other voices are fetched in a moment when they're picked.
+            // The engine is 327 MB and every voice shares it; each voice file is only 0.5 MB.
+            // So download the engine plus whichever voice is selected, and nothing else.
             let voice = await MainActor.run { AppSettings.shared.kokoroVoice }
-            let wanted = Set(Self.engineFiles + [Self.voiceFile(voice)])
-            let directory: URL
-            if let local = ModelFiles.localDirectory(for: Self.repo, requiring: Array(wanted)) {
-                directory = local
-            } else {
-                directory = try await BackgroundDownloads.shared.ensure(
-                    repo: Self.repo, include: { wanted.contains($0) }, progress: progress)
+            try await self.fetch(voice: voice) { fraction in
+                progress(fraction)
+                Task { @MainActor in
+                    VoiceStatus.shared.progress[voice] = fraction < 1 ? fraction : nil
+                }
             }
+            let directory = ModelFiles.localDirectory(for: Self.repo, requiring: Self.engineFiles)
+                ?? BackgroundDownloads.directory(for: Self.repo)
             let processor = MisakiTextProcessor()
             try await processor.prepare()   // pronunciation data, ~9 MB
             let model = try await KokoroModel.fromModelDirectory(directory, textProcessor: processor)
             Log.info(.audio, "Natural voice ready in \(Int(Date.now.timeIntervalSince(start)))s")
+            await MainActor.run { VoiceStatus.shared.refresh() }
             return model
         }
         loading = task
@@ -91,6 +117,48 @@ actor NaturalVoice {
             Log.error(.audio, "Natural voice failed to load: \(error)")
             throw error
         }
+    }
+
+    /// Starts a voice's download in the background: the shared engine the first time (327 MB),
+    /// then this voice's own file (0.5 MB). Safe to call again while it's running.
+    @MainActor
+    static func download(_ voice: String) {
+        let status = VoiceStatus.shared
+        guard isSupported, status.progress[voice] == nil, !isReady(voice) else { return }
+        status.progress[voice] = 0
+        status.failure[voice] = nil
+        Log.info(.audio, "Downloading voice \(voice)\(engineIsDownloaded ? "" : " and the voice engine")")
+        Task {
+            do {
+                try await shared.fetch(voice: voice) { fraction in
+                    Task { @MainActor in VoiceStatus.shared.progress[voice] = fraction }
+                }
+                status.progress[voice] = nil
+                status.refresh()
+                Log.info(.audio, "Voice \(voice) ready")
+            } catch {
+                status.progress[voice] = nil
+                status.failure[voice] = error.localizedDescription
+                Log.error(.audio, "Voice \(voice) failed to download: \(error)")
+            }
+        }
+    }
+
+    /// Starts the selected voice's download at launch, because the setup screen is skipped
+    /// once the microphone, speech and model are already set up.
+    @MainActor
+    static func startDownloadIfNeeded() {
+        VoiceStatus.shared.refresh()
+        guard isSupported, AppSettings.shared.naturalVoice else { return }
+        download(AppSettings.shared.kokoroVoice)
+    }
+
+    /// Makes sure the engine and one voice file are on disk.
+    func fetch(voice: String, progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws {
+        let wanted = Set(Self.engineFiles + [Self.voiceFile(voice)])
+        if ModelFiles.localDirectory(for: Self.repo, requiring: Array(wanted)) != nil { return progress(1) }
+        _ = try await BackgroundDownloads.shared.ensure(
+            repo: Self.repo, include: { wanted.contains($0) }, progress: progress)
     }
 
     /// Downloads a voice file (0.5 MB) if this is the first time it's used.

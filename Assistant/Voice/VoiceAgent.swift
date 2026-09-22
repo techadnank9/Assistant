@@ -77,6 +77,7 @@ final class VoiceAgent {
         guard !hungUp else { return }
         hungUp = true
         listening?.cancel()
+        speaker.stopSpeaking()
         // Drops any queued speech so the agent goes quiet immediately.
         io.stop()
     }
@@ -215,21 +216,37 @@ final class VoiceAgent {
         if spoken < visible.count {
             await queue(String(visible.dropFirst(spoken)))
         }
-        await io.waitUntilPlayed()
+        await waitForSpeech()
         return raw
     }
 
     private func say(_ text: String) async throws {
         turns.append(Turn(speaker: .agent, text: text))
         await queue(text)
-        await io.waitUntilPlayed()
+        await waitForSpeech()
+    }
+
+    /// Waits for everything queued to be heard, whichever way it's being played.
+    private func waitForSpeech() async {
+        if io.usesSystemSpeech {
+            await speaker.waitUntilSpoken()
+            // A short gap so the mic doesn't catch the tail of the agent's own voice.
+            try? await Task.sleep(for: .milliseconds(250))
+        } else {
+            await io.waitUntilPlayed()
+        }
+        io.agentFinishedSpeaking()
     }
 
     private func queue(_ text: String) async {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !hungUp else { return }
-        for buffer in await speaker.render(text, to: io.playbackFormat) {
-            io.play(buffer)
+        if io.usesSystemSpeech {
+            speaker.speak(text)
+        } else {
+            for buffer in await speaker.render(text, to: io.playbackFormat) {
+                io.play(buffer)
+            }
         }
         phase = .speaking
     }

@@ -36,20 +36,17 @@ final class ScriptedCaller: AudioIO, @unchecked Sendable {
         continuation.finish()
     }
 
+    /// Same speech path as the phone: the agent speaks through the system synthesizer.
+    var usesSystemSpeech: Bool { true }
+
     func play(_ buffer: AVAudioPCMBuffer) {
         queued.append(buffer)
     }
 
-    /// "Plays" the agent's reply in real time (metered for the orb), then the caller answers.
-    func waitUntilPlayed() async {
-        let buffers = queued
-        queued.removeAll()
-        for buffer in buffers {
-            for chunk in Self.split(buffer, frames: 4800) where !stopped {
-                meter.push(chunk)
-                try? await Task.sleep(for: .milliseconds(100))
-            }
-        }
+    func waitUntilPlayed() async {}
+
+    /// The caller answers once the agent has finished speaking.
+    func agentFinishedSpeaking() {
         guard !stopped, next < lines.count else { return }
         let line = lines[next]
         next += 1

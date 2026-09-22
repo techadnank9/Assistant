@@ -18,6 +18,16 @@ protocol AudioIO: AnyObject, Sendable {
     func waitUntilPlayed() async
     /// Loudness of whatever is being heard or spoken right now, 0...1. Drives the voice orb.
     var level: Float { get }
+    /// True when speech should be played by the system speech synthesizer straight to the
+    /// speaker (the phone's own mic and speaker) rather than handed over as audio buffers (a call).
+    var usesSystemSpeech: Bool { get }
+    /// Called each time the agent has finished saying something.
+    func agentFinishedSpeaking()
+}
+
+extension AudioIO {
+    var usesSystemSpeech: Bool { false }
+    func agentFinishedSpeaking() {}
 }
 
 /// Smoothed loudness from raw samples. Safe to feed from a real-time audio thread.

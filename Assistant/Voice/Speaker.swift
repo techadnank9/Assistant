@@ -12,6 +12,43 @@ final class Speaker {
         synthesizer.usesApplicationAudioSession = true
     }
 
+    // MARK: Speaking out loud (the phone's own speaker)
+
+    private let tracker = SpeechTracker()
+
+    /// Speaks `text` through the loudspeaker. Utterances queue up and play in order.
+    func speak(_ text: String) {
+        if synthesizer.delegate == nil { synthesizer.delegate = tracker }
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.voice = voice
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 1.05
+        tracker.queued(characters: text.count)
+        Log.info(.audio, "Speaking: \(text)")
+        synthesizer.speak(utterance)
+    }
+
+    /// Returns when everything queued with `speak` has been said. Never hangs: gives up after
+    /// roughly twice the expected speaking time.
+    func waitUntilSpoken() async {
+        let start = Date.now
+        let limit = 4 + Double(tracker.queuedCharacters) / 7   // ~14 characters a second, doubled
+        while tracker.pending > 0 {
+            if Date.now.timeIntervalSince(start) > limit {
+                Log.error(.audio, "Speech didn't finish after \(Int(limit))s (speaking: \(synthesizer.isSpeaking)); moving on")
+                stopSpeaking()
+                break
+            }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        tracker.reset()
+        Log.info(.audio, "Finished speaking in \(String(format: "%.1f", Date.now.timeIntervalSince(start)))s")
+    }
+
+    func stopSpeaking() {
+        synthesizer.stopSpeaking(at: .immediate)
+        tracker.reset()
+    }
+
     /// The voice picked in Settings, else the best installed one: premium and enhanced voices
     /// sound far more human than the default compact ones.
     static func chosenVoice(language: String = "en-US") -> AVSpeechSynthesisVoice? {
@@ -109,4 +146,35 @@ private final class BufferCollector: @unchecked Sendable {
         }
         if let result { onFinish?(result) }
     }
+}
+
+/// Counts utterances still to be spoken, from the synthesizer's delegate callbacks.
+private final class SpeechTracker: NSObject, AVSpeechSynthesizerDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    private var characters = 0
+
+    var pending: Int { lock.withLock { count } }
+    var queuedCharacters: Int { lock.withLock { characters } }
+
+    func queued(characters added: Int) {
+        lock.withLock {
+            count += 1
+            characters += added
+        }
+    }
+
+    func reset() {
+        lock.withLock {
+            count = 0
+            characters = 0
+        }
+    }
+
+    private func done() {
+        lock.withLock { count = max(0, count - 1) }
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) { done() }
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) { done() }
 }

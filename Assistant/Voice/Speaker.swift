@@ -29,22 +29,12 @@ final class Speaker {
 
     /// Renders `text` and returns the audio, converted to `format`.
     func render(_ text: String, to format: AVAudioFormat) async -> [AVAudioPCMBuffer] {
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = voice
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 1.05
-
-        let chunks: [AVAudioPCMBuffer] = await withCheckedContinuation { continuation in
-            nonisolated(unsafe) var chunks: [AVAudioPCMBuffer] = []
-            nonisolated(unsafe) var resumed = false
-            synthesizer.write(utterance) { audio in
-                guard !resumed else { return }
-                guard let pcm = audio as? AVAudioPCMBuffer, pcm.frameLength > 0 else {
-                    resumed = true
-                    continuation.resume(returning: chunks)
-                    return
-                }
-                chunks.append(pcm)
-            }
+        var chunks = await synthesize(text, voice: voice)
+        if chunks.isEmpty, let fallback = AVSpeechSynthesisVoice(language: "en-US"),
+           fallback.identifier != voice?.identifier {
+            // The chosen voice produced nothing (e.g. not fully installed): use the built-in one.
+            Log.error(.audio, "Voice \(voice?.name ?? "default") produced no audio; retrying with \(fallback.name)")
+            chunks = await synthesize(text, voice: fallback)
         }
         // Resample once for the whole sentence so chunk edges don't click.
         guard let joined = PCM.join(chunks), let converted = PCM.convert(joined, to: format) else {
@@ -52,5 +42,71 @@ final class Speaker {
             return []
         }
         return [converted]
+    }
+
+    /// Collects the synthesizer's buffers. Never waits forever: if the synthesizer goes quiet
+    /// for 4 seconds without its end-of-speech signal, it returns what it has.
+    private func synthesize(_ text: String, voice: AVSpeechSynthesisVoice?) async -> [AVAudioPCMBuffer] {
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.voice = voice
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 1.05
+
+        let collector = BufferCollector()
+        let result: Chunks = await withCheckedContinuation { continuation in
+            collector.onFinish = { continuation.resume(returning: Chunks(buffers: $0)) }
+            synthesizer.write(utterance) { audio in
+                guard let pcm = audio as? AVAudioPCMBuffer, pcm.frameLength > 0 else {
+                    collector.finish()
+                    return
+                }
+                collector.add(pcm)
+            }
+            Task {
+                while !collector.isFinished {
+                    try? await Task.sleep(for: .milliseconds(500))
+                    if collector.idleSeconds > 4 {
+                        Log.error(.audio, "Text-to-speech stalled; continuing with \(collector.count) chunks")
+                        collector.finish()
+                    }
+                }
+            }
+        }
+        return result.buffers
+    }
+}
+
+/// Buffers handed across the continuation; each is written once and then only read.
+private struct Chunks: @unchecked Sendable {
+    let buffers: [AVAudioPCMBuffer]
+}
+
+/// Thread-safe sink for synthesizer callbacks, which arrive on an arbitrary queue.
+private final class BufferCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var chunks: [AVAudioPCMBuffer] = []
+    private var finished = false
+    private var lastActivity = Date.now
+    var onFinish: (([AVAudioPCMBuffer]) -> Void)?
+
+    var isFinished: Bool { lock.withLock { finished } }
+    var count: Int { lock.withLock { chunks.count } }
+    var idleSeconds: TimeInterval { lock.withLock { Date.now.timeIntervalSince(lastActivity) } }
+
+    func add(_ buffer: AVAudioPCMBuffer) {
+        lock.withLock {
+            guard !finished else { return }
+            chunks.append(buffer)
+            lastActivity = .now
+        }
+    }
+
+    /// Resumes the waiting caller exactly once.
+    func finish() {
+        let result: [AVAudioPCMBuffer]? = lock.withLock {
+            guard !finished else { return nil }
+            finished = true
+            return chunks
+        }
+        if let result { onFinish?(result) }
     }
 }

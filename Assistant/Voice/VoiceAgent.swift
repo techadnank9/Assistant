@@ -1,6 +1,7 @@
 @preconcurrency import AVFoundation
 import MLXLMCommon
 import Observation
+import UIKit
 
 struct Turn: Identifiable, Codable, Hashable {
     enum Speaker: String, Codable { case caller, agent }
@@ -86,6 +87,9 @@ final class VoiceAgent {
 
     private func start() async throws {
         phase = .starting
+        // You're talking, not tapping, so iOS sees an idle screen and locks it mid-sentence.
+        // Keep the screen awake for as long as the conversation lasts.
+        UIApplication.shared.isIdleTimerDisabled = true
         // Microphone first: the permission prompt appears the moment you tap.
         status = "Starting the microphone…"
         Log.info(.voice, "Starting audio")
@@ -290,6 +294,7 @@ final class VoiceAgent {
 
     private func finish() async {
         phase = .ended
+        UIApplication.shared.isIdleTimerDisabled = false
         if let conversation { await LLMEngine.shared.close(conversation) }
         await listener.finish()
         io.stop()

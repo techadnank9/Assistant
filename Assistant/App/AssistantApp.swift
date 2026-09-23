@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         BackgroundDownloads.shared.reconnect()
         // PushKit has to be ready at launch, including when iOS wakes us for a call.
         GPUMemory.configure()
+        Breadcrumb.reportUnfinishedRun()
         CallManager.shared.startListeningForCalls()
         UNUserNotificationCenter.current().delegate = self
         return true

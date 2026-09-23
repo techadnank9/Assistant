@@ -24,7 +24,9 @@ final class VoiceAgent {
         var label: String { self == .owner ? "My assistant" : "Test a call" }
     }
 
-    private(set) var phase: Phase = .starting
+    private(set) var phase: Phase = .starting {
+        didSet { Breadcrumb.record(phase == .ended ? nil : "\(phase)") }
+    }
     private(set) var turns: [Turn] = []
     private(set) var caption = ""
     /// What's happening during setup ("Setting up speech recognition… 40%"), shown under the orb.
@@ -121,7 +123,7 @@ final class VoiceAgent {
             ? Prompts.voiceChat(owner: owner, profile: profile, briefing: MessageStore.shared.briefing())
             : Prompts.call(owner: owner, callerNumber: callerNumber, profile: profile)
         conversation = try await LLMEngine.shared.open(
-            instructions: instructions, history: [.assistant(greeting)], maxTokens: mode == .owner ? 220 : 160)
+            instructions: instructions, history: [.assistant(greeting)], maxTokens: 220)
     }
 
     private func converse() async throws {
@@ -164,7 +166,12 @@ final class VoiceAgent {
                 ? heard + "\n\n(We're out of time. Read back the message and say goodbye now.)"
                 : heard
             let reply = try await think(and: prompt)
-            if mode == .caller, reply.contains(Prompts.endMarker) || overtime { return }
+            if mode == .caller, reply.contains(Prompts.endMarker) || overtime {
+                // Don't cut them off. Offer the door, then wait a few seconds in case they
+                // have one more thing — people usually do.
+                if try await anythingElse() { continue }
+                return
+            }
         }
     }
 
@@ -173,10 +180,10 @@ final class VoiceAgent {
         guard let conversation else { return "" }
         let earlierOpenings = Set(turns.filter { $0.speaker == .agent }.map { Self.opening($0.text) })
         var repeating = false
-        // On the phone's speaker, say the whole reply as one continuous take: sentence-by-sentence
-        // clips sound choppy, and the neural voice shouldn't share the GPU with the model anyway.
-        // Calls still stream sentence by sentence into the call audio.
-        let speakWhileThinking = !io.usesSystemSpeech
+        // Speak each sentence the moment it exists, everywhere. Waiting for the whole reply before
+        // making a sound left a long silence after the text had already appeared on screen; the
+        // speaker renders the next sentence while the current one plays, so it still runs together.
+        let speakWhileThinking = true
         phase = .thinking
         let thinkStart = Date.now
         var firstToken = true
@@ -226,6 +233,30 @@ final class VoiceAgent {
         return raw
     }
 
+    /// Says goodbye properly and listens a little longer. Returns true if the caller spoke again,
+    /// in which case the conversation carries on instead of ending on them.
+    private func anythingElse() async throws -> Bool {
+        guard !hungUp else { return false }
+        try await say("If there's nothing else, I'll let you go. Thanks so much for calling, and I'll pass this on.")
+        phase = .listening
+        let captions = Task { [listener] in
+            while !Task.isCancelled {
+                self.caption = await listener.partial
+                try? await Task.sleep(for: .milliseconds(150))
+            }
+        }
+        let listen = Task { [listener] in await listener.nextUtterance(timeout: .seconds(4)) }
+        listening = listen
+        let heard = await listen.value
+        captions.cancel()
+        caption = ""
+        guard let heard, !hungUp else { return false }
+        Log.info(.voice, "Caller had more to say: \(heard)")
+        turns.append(Turn(speaker: .caller, text: heard))
+        _ = try await think(and: heard + "\n\n(They had something more to add. Answer it, and only close again once they're really done.)")
+        return true
+    }
+
     private func say(_ text: String) async throws {
         turns.append(Turn(speaker: .agent, text: text))
         await queue(text)
@@ -273,7 +304,7 @@ final class VoiceAgent {
         for turn in turns.dropLast() {
             history.append(turn.speaker == .agent ? .assistant(turn.text) : .user(turn.text))
         }
-        conversation = try await LLMEngine.shared.open(instructions: instructions, history: history, maxTokens: mode == .owner ? 220 : 160)
+        conversation = try await LLMEngine.shared.open(instructions: instructions, history: history, maxTokens: 220)
     }
 
     /// First sentence, lowercased without punctuation, for spotting repeats.

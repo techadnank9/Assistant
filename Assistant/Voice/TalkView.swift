@@ -59,6 +59,7 @@ struct LiveCallView: View {
     /// Shown as a picker while idle (home screen only).
     var mode: Binding<VoiceAgent.Mode>?
     @State private var showTranscript = false
+    private static let subtitleEnd = "subtitle-end"
 
     private var phase: VoiceAgent.Phase { agent?.phase ?? .idle }
 
@@ -114,15 +115,26 @@ struct LiveCallView: View {
 
             Spacer(minLength: 24)
 
-            Text(currentLine)
-                .font(.title3.weight(.medium))
-                .foregroundStyle(error != nil && agent == nil ? .red.opacity(0.9) : .white.opacity(phase == .listening || phase == .idle ? 0.7 : 0.95))
-                .multilineTextAlignment(.center)
-                .lineLimit(4)
-                .frame(maxWidth: .infinity, minHeight: 110, alignment: .top)
-                .padding(.horizontal, 32)
-                .contentTransition(.opacity)
-                .animation(.easeOut(duration: 0.2), value: currentLine)
+            // Live subtitle: the words appear as they're generated and it follows them down,
+            // so you can read along with what's being said rather than seeing a clipped line.
+            ScrollViewReader { scroll in
+                ScrollView(.vertical, showsIndicators: false) {
+                    Text(currentLine)
+                        .font(.title3.weight(.medium))
+                        .foregroundStyle(error != nil && agent == nil ? .red.opacity(0.9) : .white.opacity(phase == .listening || phase == .idle ? 0.7 : 0.95))
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity, alignment: .top)
+                        .padding(.horizontal, 32)
+                    Color.clear.frame(height: 1).id(Self.subtitleEnd)
+                }
+                .frame(height: 132)
+                .scrollBounceBehavior(.basedOnSize)
+                .onChange(of: currentLine) {
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        scroll.scrollTo(Self.subtitleEnd, anchor: .bottom)
+                    }
+                }
+            }
 
             controls
                 .frame(height: 72)
